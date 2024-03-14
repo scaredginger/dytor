@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "rian",
+    "rian_proc_macros",
+    "rian_registry"
+]
+
+[workspace.dependencies]
+libloading = "0.8"
+
+rian = { version = "0.1.0", path = "./rian" }
+rian_proc_macros = { version = "0.1.0", path = "./rian_proc_macros" }
+rian_registry = { version = "0.1.0", path = "./rian_registry" }

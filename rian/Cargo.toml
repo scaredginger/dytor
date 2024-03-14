@@ -1,0 +1,12 @@
+[package]
+name = "rian"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rian_proc_macros.workspace = true
+rian_registry.workspace = true
+libloading = { workspace = true, optional = true }
+
+[features]
+main = ["dep:libloading"]
