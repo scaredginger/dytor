@@ -4,9 +4,26 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rian_proc_macros.workspace = true
-rian_registry.workspace = true
+anyhow.workspace = true
+ctor.workspace = true
+futures = { workspace = true, optional = true }
 libloading = { workspace = true, optional = true }
+serde.workspace = true
+serde_yaml = { workspace = true, optional = true }
+
+rian_proc_macros.workspace = true
+# rian_registry.workspace = true
 
 [features]
-main = ["dep:libloading"]
+main = [
+    "dep:libloading",
+    "dep:serde_yaml",
+    "dep:futures",
+    "futures/alloc",
+    "serde/derive",
+    "serde/std",
+    "serde/rc",
+    "serde/alloc",
+]
+lib = []
+all = ["main", "lib"]
