@@ -1,3 +1,4 @@
+use core_lib::{serde_yaml, tokio};
 use std::{collections::HashMap, path::Path};
 
 #[tokio::main]
@@ -8,7 +9,7 @@ async fn main() {
             actors: vec![
                 rian::app::ActorConfig {
                     typename: "Foo".into(),
-                    config: serde_yaml::Value::Null,
+                    config: serde_yaml::Value::String("foo_config".into()),
                 },
                 rian::app::ActorConfig {
                     typename: "Bar".into(),

@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["dylib"]
 
 [dependencies]
 anyhow.workspace = true
+core_lib.path = "../core_lib"
 rian = { workspace = true, features = ["lib"] }

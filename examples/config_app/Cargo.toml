@@ -5,5 +5,4 @@ edition = "2021"
 
 [dependencies]
 rian = { workspace = true, features = ["main"] }
-serde_yaml.workspace = true
-tokio = { workspace = true, features = ["full"] }
+core_lib.path = "../core_lib"

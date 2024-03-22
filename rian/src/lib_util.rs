@@ -1,7 +1,10 @@
 use core::sync::atomic::AtomicPtr;
-use std::{any::TypeId, mem::MaybeUninit};
+use std::{any::Any, mem::MaybeUninit};
 
-use crate::{Actor, ActorTypeInfo, Registry};
+use __private::ListNode;
+use serde::Deserialize;
+
+use crate::{Actor, ActorVTable, Registry};
 
 static INIT_FNS: AtomicPtr<ListNode> = AtomicPtr::new(core::ptr::null_mut());
 
@@ -39,36 +42,7 @@ macro_rules! register_actor {
 fn init_fn<T: Actor>(registry: &mut Registry) -> anyhow::Result<()> {
     let name = T::name();
 
-    let prev = registry.actors.insert(
-        name,
-        ActorTypeInfo {
-            constructor: |init_data, dest| {
-                assert!(dest.len() >= std::mem::size_of::<T>());
-                let dest: *mut MaybeUninit<T> = dest.as_mut_ptr().cast();
-                assert!(dest as usize % std::mem::align_of::<T>() == 0);
-
-                let res = T::instantiate(init_data)?;
-                unsafe { &mut *dest }.write(res);
-                Ok(())
-            },
-            run: |this, data| {
-                let this = this.cast::<T>();
-                let this = unsafe { &*this };
-                Box::pin(this.run(data))
-            },
-            terminate: |this| {
-                let this = this.cast::<T>();
-                let this = unsafe { &*this };
-                Box::pin(this.terminate())
-            },
-            drop: |this| {
-                let this = this.cast::<T>();
-                unsafe { std::ptr::drop_in_place(this) }
-            },
-            size: std::mem::size_of::<T>(),
-            align: std::mem::align_of::<T>(),
-        },
-    );
+    let prev = registry.actors.insert(name, ActorVTable::new::<T>());
     if let Some(_) = prev {
         anyhow::bail!("Multiple actors registered for {name}")
     }
@@ -128,5 +102,3 @@ pub mod __private {
         }
     }
 }
-
-use __private::ListNode;

@@ -104,7 +104,8 @@ pub async fn main(config: &Config) {
         assert!(start <= end);
         let dest = unsafe { std::slice::from_raw_parts_mut(addr, actor.size) };
         refs.push((addr, *actor));
-        (actor.constructor)(&init_data, dest).unwrap();
+        let actor_config = (actor.deserialize_yaml_value)(&c.config).unwrap();
+        (actor.constructor)(&init_data, dest, actor_config).unwrap();
     }
 
     let main_data = MainData(init_data.0);

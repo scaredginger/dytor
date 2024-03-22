@@ -72,7 +72,14 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "config_app"
 version = "0.1.0"
 dependencies = [
+ "core_lib",
  "rian",
+]
+
+[[package]]
+name = "core_lib"
+version = "0.1.0"
+dependencies = [
  "serde_yaml",
  "tokio",
 ]
@@ -193,6 +200,7 @@ name = "lib1"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "core_lib",
  "rian",
 ]
 
@@ -201,6 +209,7 @@ name = "lib2"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "core_lib",
  "rian",
 ]
 

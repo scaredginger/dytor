@@ -7,9 +7,9 @@ struct Bar {
 register_actor!(Bar, ns);
 
 impl Actor for Bar {
-    type Config<'de> = ();
+    type Config = ();
 
-    fn instantiate(data: &rian::InitData) -> anyhow::Result<Self> {
+    fn instantiate(data: &rian::InitData, config: ()) -> anyhow::Result<Self> {
         Ok(Self { s: "Success 2" })
     }
 
