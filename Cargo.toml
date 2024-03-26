@@ -1,9 +1,10 @@
 [workspace]
 members = [
-    "examples/config_app",
     "examples/lib1",
     "examples/lib2",
     "rian",
+    "rian_app",
+    "rian_core",
     "rian_proc_macros",
 ]
 resolver = "2"
@@ -19,4 +20,5 @@ serde_yaml = { version = "*", default-features = false }
 tokio = { version = "*", default-features = false }
 
 rian = { version = "0.1.0", path = "./rian" }
+rian_core = { version = "0.1.0", path = "./rian_core" }
 rian_proc_macros = { version = "0.1.0", path = "./rian_proc_macros" }

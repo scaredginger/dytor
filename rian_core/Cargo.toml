@@ -1,0 +1,12 @@
+[package]
+name = "rian_core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+ctor.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+
+rian_proc_macros.workspace = true

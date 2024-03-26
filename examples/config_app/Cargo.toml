@@ -1,8 +1,0 @@
-[package]
-name = "config_app"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-rian = { workspace = true, features = ["main"] }
-core_lib.path = "../core_lib"

@@ -1,15 +1,15 @@
-use rian::{declare_rian_lib, register_actor, Actor};
+use rian::{register_actor, Actor, InitData, MainData};
 
 struct Bar {
     s: &'static str,
 }
 
-register_actor!(Bar, ns);
+register_actor!(Bar);
 
 impl Actor for Bar {
     type Config = ();
 
-    fn instantiate(data: &rian::InitData, config: ()) -> anyhow::Result<Self> {
+    fn instantiate(data: &InitData, config: ()) -> anyhow::Result<Self> {
         Ok(Self { s: "Success 2" })
     }
 
@@ -19,7 +19,7 @@ impl Actor for Bar {
 
     fn run(
         &self,
-        data: &rian::MainData,
+        data: &MainData,
     ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send + Sync {
         async {
             println!("Running {}", self.s);
@@ -27,5 +27,3 @@ impl Actor for Bar {
         }
     }
 }
-
-declare_rian_lib!();

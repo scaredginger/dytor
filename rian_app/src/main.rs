@@ -1,17 +1,18 @@
-use core_lib::{serde_yaml, tokio};
 use std::{collections::HashMap, path::Path};
+
+use rian::{serde_yaml, tokio};
 
 #[tokio::main]
 async fn main() {
-    let config = rian::app::Config {
-        root_namespace: rian::app::Namespace {
+    let config = rian_app::Config {
+        root_namespace: rian_app::Namespace {
             children: HashMap::default(),
             actors: vec![
-                rian::app::ActorConfig {
+                rian_app::ActorConfig {
                     typename: "Foo".into(),
                     config: serde_yaml::Value::String("foo_config".into()),
                 },
-                rian::app::ActorConfig {
+                rian_app::ActorConfig {
                     typename: "Bar".into(),
                     config: serde_yaml::Value::Null,
                 },
@@ -23,5 +24,5 @@ async fn main() {
             Path::new("/home/andrew/rian/target/debug/liblib2.so").into(),
         ],
     };
-    rian::main(&config).await;
+    rian_app::app::main(&config).await;
 }

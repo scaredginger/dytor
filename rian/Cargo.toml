@@ -3,26 +3,10 @@ name = "rian"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["dylib"]
+
 [dependencies]
-anyhow.workspace = true
-ctor.workspace = true
-futures = { workspace = true, optional = true }
-libloading = { workspace = true, optional = true }
-serde.workspace = true
-serde_yaml = { workspace = true, optional = true }
-
-rian_proc_macros.workspace = true
-
-[features]
-main = [
-    "dep:libloading",
-    "dep:serde_yaml",
-    "dep:futures",
-    "futures/alloc",
-    "serde/derive",
-    "serde/std",
-    "serde/rc",
-    "serde/alloc",
-]
-lib = []
-all = ["main", "lib"]
+rian_core.workspace = true
+serde_yaml.workspace = true
+tokio = { workspace = true, features = ["full"] }

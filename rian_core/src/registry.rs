@@ -1,33 +1,43 @@
 use core::sync::atomic::AtomicPtr;
-use std::{any::Any, mem::MaybeUninit};
 
 use __private::ListNode;
-use serde::Deserialize;
 
-use crate::{Actor, ActorVTable, Registry};
+use crate::{Actor, ActorMeta};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 static INIT_FNS: AtomicPtr<ListNode> = AtomicPtr::new(core::ptr::null_mut());
 
-#[macro_export]
-macro_rules! declare_rian_lib {
-    () => {
-        use std::sync::atomic::Ordering;
-        use $crate::__private::Registry;
+#[derive(Default)]
+pub struct Registry {
+    pub actors: HashMap<&'static str, ActorMeta>,
+}
 
-        #[export_name = "load_rian_module"]
-        extern "C" fn load_rian_module(registry: &mut Registry) {
-            $crate::lib_util::__private::do_load(registry);
+impl Registry {
+    pub fn load() -> Arc<Self> {
+        use std::sync::atomic::Ordering;
+
+        let mut registry = Registry::default();
+        let mut ptr = INIT_FNS.load(Ordering::Acquire);
+        while ptr != core::ptr::null_mut() {
+            let node = unsafe { &*ptr };
+            (node.f)(&mut registry).unwrap();
+            ptr = node.next.load(Ordering::Relaxed);
         }
-    };
+        Arc::new(registry)
+    }
 }
 
 #[macro_export]
 macro_rules! register_actor {
+    ($struct:ident) => {
+        register_actor!($struct, __register_actor_private);
+    };
     ($struct:ident, $ns:ident) => {
         mod $ns {
             use super::$struct;
             use std::sync::atomic::Ordering;
-            use $crate::lib_util::__private::{ctor, init_fn, init_node, ListNode};
+            use $crate::registry::__private::{ctor, init_fn, init_node, ListNode};
 
             static NODE: ListNode = ListNode::new(init_fn::<$struct>);
 
@@ -42,7 +52,7 @@ macro_rules! register_actor {
 fn init_fn<T: Actor>(registry: &mut Registry) -> anyhow::Result<()> {
     let name = T::name();
 
-    let prev = registry.actors.insert(name, ActorVTable::new::<T>());
+    let prev = registry.actors.insert(name, ActorMeta::new::<T>());
     if let Some(_) = prev {
         anyhow::bail!("Multiple actors registered for {name}")
     }
@@ -50,22 +60,15 @@ fn init_fn<T: Actor>(registry: &mut Registry) -> anyhow::Result<()> {
 }
 
 pub mod __private {
+    use super::Registry;
     use core::{
         ptr,
         sync::atomic::{AtomicPtr, Ordering},
     };
     pub use ctor;
 
-    use crate::{Actor, __private::Registry};
+    use crate::Actor;
 
-    pub fn do_load(registry: &mut Registry) {
-        let mut ptr = super::INIT_FNS.load(Ordering::Acquire);
-        while ptr != core::ptr::null_mut() {
-            let node = unsafe { &*ptr };
-            (node.f)(registry).unwrap();
-            ptr = node.next.load(Ordering::Relaxed);
-        }
-    }
     pub struct ListNode {
         pub(super) f: fn(r: &mut Registry) -> anyhow::Result<()>,
         pub(super) next: AtomicPtr<ListNode>,

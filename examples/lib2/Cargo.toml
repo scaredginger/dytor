@@ -8,5 +8,5 @@ crate-type = ["dylib"]
 
 [dependencies]
 anyhow.workspace = true
-core_lib.path = "../core_lib"
-rian = { workspace = true, features = ["lib"] }
+rian.workspace = true
+serde = { workspace = true, features = ["derive", "rc", "std"] }
