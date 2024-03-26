@@ -12,7 +12,6 @@ serde.workspace = true
 serde_yaml = { workspace = true, optional = true }
 
 rian_proc_macros.workspace = true
-# rian_registry.workspace = true
 
 [features]
 main = [

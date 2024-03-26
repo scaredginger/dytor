@@ -364,14 +364,6 @@ name = "rian_proc_macros"
 version = "0.1.0"
 
 [[package]]
-name = "rian_registry"
-version = "0.1.0"
-dependencies = [
- "ctor",
- "parking_lot",
-]
-
-[[package]]
 name = "rustc-demangle"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"

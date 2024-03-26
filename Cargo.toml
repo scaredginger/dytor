@@ -5,7 +5,6 @@ members = [
     "examples/lib2",
     "rian",
     "rian_proc_macros",
-    "rian_registry",
 ]
 resolver = "2"
 
@@ -21,4 +20,3 @@ tokio = { version = "*", default-features = false }
 
 rian = { version = "0.1.0", path = "./rian" }
 rian_proc_macros = { version = "0.1.0", path = "./rian_proc_macros" }
-# rian_registry = { version = "0.1.0", path = "./rian_registry" }
