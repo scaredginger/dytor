@@ -2,6 +2,7 @@
 
 use actor::{ActorVTable, TraitId};
 pub use paste;
+use queue::{local::LocalQueue, Tx};
 use registry::DynMetaPlaceholder;
 use serde::Deserialize;
 use std::{
@@ -44,14 +45,35 @@ type PhantomUnsend = PhantomData<*mut ()>;
 pub(crate) trait Dyn: 'static + Pointee<Metadata = DynMetadata<Self>> {}
 impl<T: ?Sized + 'static + Pointee<Metadata = DynMetadata<T>>> Dyn for T {}
 
+struct ContextLink {
+    queue: Box<dyn Tx<Msg>>,
+}
+
 pub struct Context {
-    internal_messages: Vec<Box<dyn Fn(*mut u8)>>,
+    internal_messages: LocalQueue<Box<dyn Fn(*mut u8)>>,
+    links: HashMap<ContextId, ContextLink>,
     _unsend_marker: PhantomUnsend,
 }
+
+type Msg = Box<dyn 'static + Send + FnOnce(*mut u8)>;
 
 impl Context {
     pub(crate) fn builder() -> ContextBuilder {
         ContextBuilder::default()
+    }
+
+    fn send(&mut self, dest: UntypedRef, f: Msg) {
+        let conn = self.links.get_mut(&dest.context_id).unwrap();
+        conn.queue.send(f);
+    }
+
+    pub(crate) fn send_msg<T>(&mut self, r: Ref<T>, f: impl 'static + Send + FnOnce(&mut T)) {
+        let queued_fn = Box::new(move |ptr| {
+            let ptr = ptr as *mut T;
+            let dest = unsafe { &mut *ptr };
+            f(dest)
+        });
+        self.send(r.loc, queued_fn);
     }
 }
 
@@ -148,7 +170,8 @@ impl ContextBuilder {
     pub fn build(self, mut actor_configs: HashMap<ActorId, Box<dyn Any>>) -> Context {
         let mut arena = self.arena.unwrap();
         let mut context = Context {
-            internal_messages: Vec::new(),
+            internal_messages: LocalQueue::unbounded(),
+            links: HashMap::default(),
             _unsend_marker: Default::default(),
         };
 
@@ -200,12 +223,16 @@ pub struct Ref<T: ?Sized> {
     _phantom: PhantomData<*const T>,
 }
 
-impl<T: ?Sized> Ref<T> {
+impl<T> Ref<T> {
     fn from_loc(loc: UntypedRef) -> Self {
         Self {
             loc,
             _phantom: PhantomData,
         }
+    }
+
+    fn send(self, stage: &mut MainStage, f: impl 'static + Send + FnOnce(&mut T)) {
+        stage.context.send_msg(self, f);
     }
 }
 

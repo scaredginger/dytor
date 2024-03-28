@@ -1,51 +1,36 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, num::NonZeroUsize};
 
-use super::{ReadErr, ReadResult, Rx, Tx, WriteErr, WriteResult};
+use super::{ReadErr, ReadResult, WriteErr, WriteResult};
 
-#[derive(Default)]
-pub struct Unbounded<T> {
+pub struct LocalQueue<T> {
     queue: VecDeque<T>,
+    capacity: Option<NonZeroUsize>,
 }
 
-impl<T> Tx<T> for &mut Unbounded<T> {
+impl<T: 'static> LocalQueue<T> {
     fn send(&mut self, value: T) -> WriteResult<T> {
-        self.queue.push_back(value);
-        Ok(())
-    }
-}
-
-impl<T> Rx<T> for &mut Unbounded<T> {
-    fn recv(&mut self) -> ReadResult<T> {
-        self.queue.pop_front().ok_or(ReadErr::Empty)
-    }
-}
-
-pub struct Bounded<T> {
-    queue: VecDeque<T>,
-    capacity: usize,
-}
-
-impl<T> Bounded<T> {
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            queue: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-}
-
-impl<T> Tx<T> for &mut Bounded<T> {
-    fn send(&mut self, value: T) -> WriteResult<T> {
-        if self.queue.len() >= self.capacity {
+        if self.capacity.is_some_and(|c| c.get() >= self.queue.len()) {
             return Err(WriteErr::Full(value));
         }
         self.queue.push_back(value);
         Ok(())
     }
-}
 
-impl<T> Rx<T> for &mut Bounded<T> {
     fn recv(&mut self) -> ReadResult<T> {
         self.queue.pop_front().ok_or(ReadErr::Empty)
+    }
+
+    pub fn bounded(capacity: NonZeroUsize) -> Self {
+        Self {
+            queue: VecDeque::with_capacity(capacity.get()),
+            capacity: Some(capacity),
+        }
+    }
+
+    pub fn unbounded() -> Self {
+        Self {
+            queue: VecDeque::new(),
+            capacity: None,
+        }
     }
 }

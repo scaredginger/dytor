@@ -1,10 +1,10 @@
 pub mod local;
 
-pub trait Rx<T> {
+pub trait Rx<T: 'static + Send> {
     fn recv(&mut self) -> ReadResult<T>;
 }
 
-pub trait Tx<T> {
+pub trait Tx<T: 'static + Send> {
     fn send(&mut self, value: T) -> WriteResult<T>;
 }
 
