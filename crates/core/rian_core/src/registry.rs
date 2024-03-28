@@ -1,7 +1,7 @@
 use core::sync::atomic::AtomicPtr;
 use std::any::{type_name, Any, TypeId};
 use std::mem::MaybeUninit;
-use std::ptr::{DynMetadata, Pointee};
+use std::ptr::{DynMetadata};
 
 pub(crate) use __private::InterfaceMetadata;
 use __private::ListNode;
@@ -94,7 +94,7 @@ fn init_fn<T: Actor>(
     for (trait_id, meta) in traits {
         registry.trait_types.entry(trait_id).or_default().push(meta);
     }
-    if let Some(_) = prev {
+    if prev.is_some() {
         anyhow::bail!("Actor {} registered twice", type_name::<T>());
     }
     Ok(())

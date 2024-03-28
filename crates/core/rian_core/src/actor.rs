@@ -2,11 +2,9 @@ use std::alloc::Layout;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::mem::{align_of, MaybeUninit};
-use std::ptr::{DynMetadata, Pointee};
 
 use serde::de::{Deserialize, DeserializeOwned};
 
-use crate::registry::InterfaceMetadata;
 use crate::{Dyn, InitStage};
 
 pub use rian_proc_macros::{uniquely_named, UniquelyNamed};

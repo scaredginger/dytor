@@ -68,7 +68,7 @@ impl ActorTree {
             .filter(move |actor| actor.vtable.type_id == type_id)
             .map(|actor| Ref {
                 loc: actor.loc,
-                _phantom: PhantomData::default(),
+                _phantom: PhantomData,
             })
     }
 
@@ -91,7 +91,7 @@ impl ActorTree {
             })
             .map(|(actor, t)| DynRef {
                 dyn_metadata: t.dyn_meta,
-                _phantom: PhantomData::default(),
+                _phantom: PhantomData,
                 loc: actor.loc,
             })
     }
@@ -196,7 +196,7 @@ impl<T: ?Sized> Ref<T> {
     fn from_loc(loc: UntypedRef) -> Self {
         Self {
             loc,
-            _phantom: PhantomData::default(),
+            _phantom: PhantomData,
         }
     }
 }

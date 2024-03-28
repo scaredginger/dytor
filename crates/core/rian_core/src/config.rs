@@ -19,7 +19,7 @@ impl<'de> Deserialize<'de> for NamespacePath {
         D: serde::Deserializer<'de>,
     {
         let s: &str = Deserialize::deserialize(deserializer)?;
-        Ok(Self(s.split("::").map(|x| Arc::from(x)).collect()))
+        Ok(Self(s.split("::").map(Arc::from).collect()))
     }
 }
 
