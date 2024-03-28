@@ -1,12 +1,5 @@
 [workspace]
-members = [
-    "examples/lib1",
-    "examples/lib2",
-    "rian",
-    "rian_app",
-    "rian_core",
-    "rian_proc_macros",
-]
+members = ["./crates/examples/*", "./crates/core/*"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -21,6 +14,6 @@ serde = { version = "*", default-features = false }
 serde_yaml = { version = "*", default-features = false }
 syn = { version = "*", default-features = false }
 
-rian = { version = "0.1.0", path = "./rian" }
-rian_core = { version = "0.1.0", path = "./rian_core" }
-rian_proc_macros = { version = "0.1.0", path = "./rian_proc_macros" }
+rian = { version = "0.1.0", path = "./crates/core/rian" }
+rian_core = { version = "0.1.0", path = "./crates/core/rian_core" }
+rian_proc_macros = { version = "0.1.0", path = "./crates/core/rian_proc_macros" }
