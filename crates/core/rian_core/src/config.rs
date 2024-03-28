@@ -8,26 +8,15 @@ use crate::ContextId;
 pub struct ActorConfig {
     pub typename: Arc<str>,
     pub config: serde_yaml::Value,
-    // pub context: ContextId,
-}
-
-pub struct NamespacePath(Vec<Arc<str>>);
-
-impl<'de> Deserialize<'de> for NamespacePath {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s: &str = Deserialize::deserialize(deserializer)?;
-        Ok(Self(s.split("::").map(Arc::from).collect()))
-    }
+    pub context: ContextId,
 }
 
 #[derive(Deserialize)]
-pub struct Namespace {
-    pub children: HashMap<Arc<str>, Namespace>,
+pub struct Scope {
+    pub name: Option<Arc<str>>,
+    pub children: HashMap<Arc<str>, Scope>,
     pub actors: Vec<ActorConfig>,
-    pub namespace_imports: Vec<NamespacePath>,
+    pub imported_scopes: Vec<Arc<str>>,
 }
 
 #[derive(Deserialize)]
@@ -38,6 +27,6 @@ pub struct Context {
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub root_namespace: Namespace,
+    pub root: Scope,
     pub contexts: Vec<Context>,
 }

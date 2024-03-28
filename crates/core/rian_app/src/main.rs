@@ -1,27 +1,30 @@
 use std::{collections::HashMap, path::Path};
 
 use rian::{
-    config::{ActorConfig, Namespace},
-    serde_yaml,
+    config::{ActorConfig, Scope},
+    serde_yaml, ContextId,
 };
 
 fn main() {
     let config = rian_app::Config {
         rian: rian::Config {
             contexts: vec![],
-            root_namespace: Namespace {
+            root: Scope {
+                name: None,
                 children: HashMap::default(),
                 actors: vec![
                     ActorConfig {
                         typename: "Foo".into(),
                         config: serde_yaml::Value::String("foo_config".into()),
+                        context: ContextId::from_u32(0),
                     },
                     ActorConfig {
                         typename: "Bar".into(),
                         config: serde_yaml::Value::Null,
+                        context: ContextId::from_u32(0),
                     },
                 ],
-                namespace_imports: vec![],
+                imported_scopes: vec![],
             },
         },
         shared_lib_paths: vec![

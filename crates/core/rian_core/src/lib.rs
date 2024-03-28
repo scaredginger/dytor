@@ -29,7 +29,14 @@ pub(crate) struct ActorId(pub(crate) u32);
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
-struct ContextId(u32);
+pub struct ContextId(u32);
+
+impl ContextId {
+    #[must_use]
+    pub fn from_u32(x: u32) -> Self {
+        Self(x)
+    }
+}
 
 type PhantomUnsend = PhantomData<*mut ()>;
 

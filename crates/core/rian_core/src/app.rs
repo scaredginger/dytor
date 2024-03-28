@@ -1,8 +1,6 @@
 use std::{any::TypeId, collections::HashMap, sync::Arc};
 
-use crate::{
-    ActorId, ActorTree, Config, Context, ContextId, Registry,
-};
+use crate::{ActorId, ActorTree, Config, Context, ContextId, Registry};
 
 // break it down into stages
 // 1. Partition actors into threaded contexts
@@ -12,11 +10,11 @@ use crate::{
 // 5. Start handling messages
 
 pub fn run(config: &Config) {
-    let ns = &config.root_namespace;
+    let ns = &config.root;
     if !ns.children.is_empty() {
         unimplemented!("Namespaces");
     }
-    if !ns.namespace_imports.is_empty() {
+    if !ns.imported_scopes.is_empty() {
         unimplemented!("Namespaces");
     }
 

@@ -1,4 +1,4 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use rian::{register_actor, Actor, InitStage, UniquelyNamed};
 
