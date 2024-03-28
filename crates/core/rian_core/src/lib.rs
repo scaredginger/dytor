@@ -14,6 +14,7 @@ use std::{
 };
 
 mod actor;
+pub mod queue;
 pub use actor::{uniquely_named, Actor, UniquelyNamed};
 mod arena;
 pub mod config;
@@ -162,7 +163,7 @@ impl ContextBuilder {
             let buf = arena.at_offset(offset as usize, actor.vtable.layout());
 
             let config = actor_configs.remove(&actor.id).unwrap();
-            (actor.vtable.constructor)(&init_stage, buf, config);
+            (actor.vtable.constructor)(&init_stage, buf, config).unwrap();
         }
         assert!(
             actor_configs.is_empty(),
