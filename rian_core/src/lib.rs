@@ -1,124 +1,216 @@
-use serde::{de::DeserializeOwned, Deserialize};
+#![feature(ptr_metadata, const_type_id)]
+
+use actor::{ActorVTable, TraitId};
+pub use paste;
+use registry::DynMetaPlaceholder;
+use serde::Deserialize;
 use std::{
-    alloc::Layout, any::Any, fmt::Debug, future::Future, marker::PhantomData, mem::MaybeUninit,
-    pin::Pin, sync::Arc,
+    any::{Any, TypeId},
+    collections::HashMap,
+    fmt::Debug,
+    marker::PhantomData,
+    ptr::{DynMetadata, Pointee},
+    sync::Arc,
 };
 
+mod actor;
+pub use actor::{uniquely_named, Actor, UniquelyNamed};
+mod arena;
+pub mod config;
+use arena::Arena;
+pub use config::Config;
 pub mod registry;
-pub use registry::Registry;
+pub(crate) use registry::Registry;
+pub mod app;
 
-pub trait Actor: Any + Unpin + Sized {
-    type Config: Debug + DeserializeOwned;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct ActorId(pub(crate) u32);
 
-    fn instantiate(data: &InitData, config: Self::Config) -> anyhow::Result<Self>;
-    fn name() -> &'static str;
-    fn run(&self, data: &MainData) -> impl Future<Output = anyhow::Result<()>>;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+struct ContextId(u32);
 
-    fn terminate(&self) -> impl Future<Output = ()> {
-        async {}
-    }
-}
+type PhantomUnsend = PhantomData<*mut ()>;
+
+pub(crate) trait Dyn: 'static + Pointee<Metadata = DynMetadata<Self>> {}
+impl<T: ?Sized + 'static + Pointee<Metadata = DynMetadata<T>>> Dyn for T {}
 
 pub struct Context {
-    registry: std::sync::Arc<Registry>,
+    internal_messages: Vec<Box<dyn Fn(*mut u8)>>,
+    _unsend_marker: PhantomUnsend,
 }
 
 impl Context {
-    pub fn new(registry: Arc<Registry>) -> Self {
-        Self { registry }
+    pub(crate) fn builder() -> ContextBuilder {
+        ContextBuilder::default()
     }
 }
 
-pub struct InitData(Context);
+#[derive(Clone)]
+struct ActorData {
+    id: ActorId,
+    vtable: &'static ActorVTable,
+    loc: UntypedRef,
+}
 
-impl From<Context> for InitData {
-    fn from(context: Context) -> Self {
-        Self(context)
+#[derive(Default)]
+struct ActorTree {
+    // TODO: actually make this a tree
+    actors: Vec<ActorData>,
+}
+
+impl ActorTree {
+    fn lookup<T: Actor>(&self, from_actor: ActorId) -> impl '_ + Iterator<Item = Ref<T>> {
+        let type_id = TypeId::of::<T>();
+        self.actors
+            .iter()
+            .filter(move |actor| actor.vtable.type_id == type_id)
+            .map(|actor| Ref {
+                loc: actor.loc,
+                _phantom: PhantomData::default(),
+            })
     }
+
+    fn lookup_dyn<T: ?Sized + Dyn>(
+        &self,
+        from_actor: ActorId,
+    ) -> impl '_ + Iterator<Item = DynRef<T>> {
+        let trait_id = TraitId::of::<T>();
+        let types = match Registry::get().trait_types.get(&trait_id) {
+            Some(types) => types.as_ref(),
+            None => &[],
+        };
+        self.actors
+            .iter()
+            .filter_map(|actor| {
+                Some((
+                    actor,
+                    types.iter().find(|x| x.type_id == actor.vtable.type_id)?,
+                ))
+            })
+            .map(|(actor, t)| DynRef {
+                dyn_metadata: t.dyn_meta,
+                _phantom: PhantomData::default(),
+                loc: actor.loc,
+            })
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ContextBuilder {
+    id: Option<ContextId>,
+    actors: Option<Vec<ActorData>>,
+    arena: Option<Arena>,
+    tree: Option<Arc<ActorTree>>,
+}
+
+impl ContextBuilder {
+    pub fn with_id(mut self, id: ContextId) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub fn place_actors(&mut self, actors: Vec<(ActorId, &'static ActorVTable)>) -> &[ActorData] {
+        let (arena, offsets) = Arena::from_layouts(&Vec::from_iter(
+            actors.iter().map(|(_, vtable)| vtable.layout()),
+        ));
+        self.arena = Some(arena);
+        self.actors = Some(
+            offsets
+                .into_iter()
+                .zip(actors)
+                .map(|(offset, (id, vtable))| ActorData {
+                    id,
+                    vtable,
+                    loc: UntypedRef {
+                        context_id: self.id.unwrap(),
+                        offset_ptr: offset.try_into().unwrap(),
+                    },
+                })
+                .collect(),
+        );
+        self.actors.as_ref().unwrap()
+    }
+
+    pub fn set_tree(&mut self, tree: Arc<ActorTree>) {
+        self.tree = Some(tree)
+    }
+
+    pub fn build(self, mut actor_configs: HashMap<ActorId, Box<dyn Any>>) -> Context {
+        let mut arena = self.arena.unwrap();
+        let mut context = Context {
+            internal_messages: Vec::new(),
+            _unsend_marker: Default::default(),
+        };
+
+        let tree = self.tree.unwrap();
+        for actor in self.actors.unwrap() {
+            let init_stage = InitStage {
+                context: &mut context,
+                tree: &tree,
+                actor_being_constructed: actor.id,
+            };
+            let offset = actor.loc.offset_ptr;
+            let buf = arena.at_offset(offset as usize, actor.vtable.layout());
+
+            let config = actor_configs.remove(&actor.id).unwrap();
+            (actor.vtable.constructor)(&init_stage, buf, config);
+        }
+        assert!(
+            actor_configs.is_empty(),
+            "Actors not constructed: {:?}",
+            actor_configs.keys()
+        );
+
+        context
+    }
+}
+
+pub struct InitStage<'init> {
+    pub(crate) context: &'init mut Context,
+    pub(crate) tree: &'init ActorTree,
+    pub(crate) actor_being_constructed: ActorId,
+}
+
+#[derive(Clone, Copy)]
+struct UntypedRef {
+    context_id: ContextId,
+    offset_ptr: u32,
+}
+
+#[derive(Clone, Copy)]
+pub struct DynRef<T: ?Sized> {
+    dyn_metadata: DynMetaPlaceholder,
+    loc: UntypedRef,
+    _phantom: PhantomData<*const T>,
 }
 
 #[derive(Clone, Copy)]
 pub struct Ref<T: ?Sized> {
-    offset_ptr: u32,
+    loc: UntypedRef,
     _phantom: PhantomData<*const T>,
 }
 
-impl InitData {
-    pub fn request<T: ?Sized>(&self) -> Ref<T> {
-        unimplemented!();
-    }
-}
-
-pub struct MainData(Context);
-
-impl From<InitData> for MainData {
-    fn from(data: InitData) -> Self {
-        Self(data.0)
-    }
-}
-
-impl MainData {
-    pub fn send<T: ?Sized>(&self, _r: Ref<T>, msg: impl FnOnce(&T) + Send) {
-        unimplemented!();
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct ActorMeta {
-    pub deserialize_yaml: fn(serde_yaml::Deserializer) -> anyhow::Result<Box<dyn Any>>,
-    pub deserialize_yaml_value: fn(&serde_yaml::Value) -> anyhow::Result<Box<dyn Any>>,
-    pub constructor: fn(&InitData, dest: &mut [u8], config: Box<dyn Any>) -> anyhow::Result<()>,
-    pub run: for<'a> fn(
-        *const u8,
-        &'a MainData,
-    ) -> Pin<Box<dyn 'a + Future<Output = anyhow::Result<()>>>>,
-    pub terminate: fn(*const u8) -> Pin<Box<dyn Future<Output = ()>>>,
-    pub drop: fn(*mut u8),
-    size: usize,
-    align: usize,
-}
-
-impl ActorMeta {
-    pub fn layout(&self) -> Layout {
-        Layout::from_size_align(self.size, self.align).unwrap()
-    }
-
-    const fn new<T: Actor>() -> Self {
+impl<T: ?Sized> Ref<T> {
+    fn from_loc(loc: UntypedRef) -> Self {
         Self {
-            deserialize_yaml: |d| match T::Config::deserialize(d) {
-                Ok(x) => Ok(Box::new(x) as Box<dyn Any>),
-                Err(e) => anyhow::bail!("Could not deserialize config for {} {e:?}", T::name()),
-            },
-            deserialize_yaml_value: |d| match T::Config::deserialize(d) {
-                Ok(x) => Ok(Box::new(x) as Box<dyn Any>),
-                Err(e) => anyhow::bail!("Could not deserialize config for {} {e:?}", T::name()),
-            },
-            constructor: |init_data, dest, config| {
-                let config: Box<T::Config> = config.downcast().unwrap();
-                assert!(dest.len() >= std::mem::size_of::<T>());
-                let dest: *mut MaybeUninit<T> = dest.as_mut_ptr().cast();
-                assert!(dest as usize % std::mem::align_of::<T>() == 0);
-
-                let res = T::instantiate(init_data, *config)?;
-                unsafe { &mut *dest }.write(res);
-                Ok(())
-            },
-            run: |this, data| {
-                let this = this.cast::<T>();
-                let this = unsafe { &*this };
-                Box::pin(this.run(data))
-            },
-            terminate: |this| {
-                let this = this.cast::<T>();
-                let this = unsafe { &*this };
-                Box::pin(this.terminate())
-            },
-            drop: |this| {
-                let this = this.cast::<T>();
-                unsafe { std::ptr::drop_in_place(this) }
-            },
-            size: std::mem::size_of::<T>(),
-            align: std::mem::align_of::<T>(),
+            loc,
+            _phantom: PhantomData::default(),
         }
     }
+}
+
+impl<'a> InitStage<'a> {
+    pub fn request<T: Actor>(&self) -> impl '_ + Iterator<Item = Ref<T>> {
+        self.tree.lookup::<T>(self.actor_being_constructed)
+    }
+    pub fn request_dyn<T: ?Sized + Dyn>(&self) -> impl '_ + Iterator<Item = DynRef<T>> {
+        self.tree.lookup_dyn::<T>(self.actor_being_constructed)
+    }
+}
+
+pub struct MainStage {
+    pub(crate) context: Context,
+    pub(crate) actor_running: ActorId,
 }

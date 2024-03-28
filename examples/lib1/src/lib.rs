@@ -1,34 +1,29 @@
 use std::{sync::Arc, time::Duration};
 
-use rian::{register_actor, Actor, InitData, MainData, tokio};
+use rian::{register_actor, uniquely_named, Actor, InitStage, MainStage, UniquelyNamed};
 
+use rian::CommonTrait;
+
+#[derive(UniquelyNamed)]
 struct Foo {
     s: Arc<str>,
 }
 
-register_actor!(Foo);
+impl CommonTrait for Foo {}
+
+register_actor!(Foo {
+    dyn CommonTrait,
+});
 
 impl Actor for Foo {
     type Config = Arc<str>;
 
-    fn instantiate(data: &InitData, s: Arc<str>) -> anyhow::Result<Self> {
+    fn instantiate(data: &InitStage, s: Arc<str>) -> anyhow::Result<Self> {
+        println!("Foo {}", data.request::<Foo>().count());
+        println!(
+            "CommonTrait {}",
+            data.request_dyn::<dyn CommonTrait>().count()
+        );
         Ok(Self { s })
-    }
-
-    fn name() -> &'static str {
-        "Foo"
-    }
-
-    async fn run(&self, data: &MainData) -> anyhow::Result<()> {
-        println!("Running {}", self.s);
-        let handle = tokio::spawn(async {
-            for i in 1..=10 {
-                println!("print {i}");
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
-        println!("spawned task");
-        handle.await.unwrap();
-        Ok(())
     }
 }

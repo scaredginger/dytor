@@ -9,4 +9,3 @@ crate-type = ["dylib"]
 [dependencies]
 rian_core.workspace = true
 serde_yaml.workspace = true
-tokio = { workspace = true, features = ["full"] }

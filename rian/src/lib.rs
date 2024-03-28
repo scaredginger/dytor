@@ -2,6 +2,7 @@
 pub use rian_core as core;
 // pub use serde;
 pub use serde_yaml;
-pub use tokio;
 
 pub use rian_core::*;
+
+pub trait CommonTrait {}

@@ -1,29 +1,20 @@
-use rian::{register_actor, Actor, InitData, MainData};
+use rian::{register_actor, Actor, CommonTrait, InitStage, UniquelyNamed};
 
+#[derive(UniquelyNamed)]
 struct Bar {
     s: &'static str,
 }
 
-register_actor!(Bar);
+impl CommonTrait for Bar {}
+
+register_actor!(Bar {
+    dyn CommonTrait,
+});
 
 impl Actor for Bar {
     type Config = ();
 
-    fn instantiate(data: &InitData, config: ()) -> anyhow::Result<Self> {
+    fn instantiate(data: &InitStage, config: ()) -> anyhow::Result<Self> {
         Ok(Self { s: "Success 2" })
-    }
-
-    fn name() -> &'static str {
-        "Bar"
-    }
-
-    fn run(
-        &self,
-        data: &MainData,
-    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send + Sync {
-        async {
-            println!("Running {}", self.s);
-            Ok(())
-        }
     }
 }

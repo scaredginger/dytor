@@ -15,9 +15,11 @@ ctor = { version = "*", default-features = false }
 futures = { version = "*", default-features = false }
 libloading = { version = "0.8", default-features = false }
 parking_lot = { version = "*", default-features = false }
+paste = { version = "*", default-features = false }
+quote = { version = "*", default-features = false }
 serde = { version = "*", default-features = false }
 serde_yaml = { version = "*", default-features = false }
-tokio = { version = "*", default-features = false }
+syn = { version = "*", default-features = false }
 
 rian = { version = "0.1.0", path = "./rian" }
 rian_core = { version = "0.1.0", path = "./rian_core" }
