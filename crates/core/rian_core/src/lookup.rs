@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{actor::TraitId, arena::Offset, ActorData, ActorId, ContextId, MainStage, Registry};
+use crate::{actor::TraitId, arena::Offset, ActorData, ActorId, ContextId, Registry};
 
 #[derive(Default)]
 pub(crate) struct ActorTree {
@@ -105,13 +105,4 @@ pub struct BroadcastGroup<T: ?Sized> {
 pub struct Key<T: ?Sized> {
     pub(crate) loc: Loc,
     pub(crate) meta: <T as Pointee>::Metadata,
-}
-
-impl<T: ?Sized> Key<T>
-where
-    <T as Pointee>::Metadata: 'static,
-{
-    fn send(self, stage: &mut MainStage, f: impl 'static + Send + FnOnce(&mut T)) {
-        stage.context.send_msg(self, f);
-    }
 }

@@ -31,7 +31,6 @@ impl TraitId {
 
 #[derive(Clone, Copy)]
 pub(crate) struct ActorVTable {
-    pub(crate) deserialize_yaml: fn(serde_yaml::Deserializer) -> anyhow::Result<Box<dyn Any>>,
     pub(crate) deserialize_yaml_value: fn(&serde_yaml::Value) -> anyhow::Result<Box<dyn Any>>,
     pub(crate) constructor:
         fn(&InitStage, dest: &mut [u8], config: Box<dyn Any>) -> anyhow::Result<()>,
@@ -49,10 +48,6 @@ impl ActorVTable {
 
     pub(crate) const fn new<T: Actor>() -> Self {
         Self {
-            deserialize_yaml: |d| match T::Config::deserialize(d) {
-                Ok(x) => Ok(Box::new(x) as Box<dyn Any>),
-                Err(e) => anyhow::bail!("Could not deserialize config for {} {e:?}", T::name()),
-            },
             deserialize_yaml_value: |d| match T::Config::deserialize(d) {
                 Ok(x) => Ok(Box::new(x) as Box<dyn Any>),
                 Err(e) => anyhow::bail!("Could not deserialize config for {} {e:?}", T::name()),

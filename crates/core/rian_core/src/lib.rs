@@ -1,4 +1,5 @@
 #![feature(ptr_metadata, const_type_id)]
+#![allow(private_bounds)]
 
 use actor::ActorVTable;
 use lookup::{ActorTree, BroadcastGroup, Key, Loc, Query};
@@ -20,7 +21,7 @@ pub mod queue;
 pub use actor::{uniquely_named, Actor, UniquelyNamed};
 mod arena;
 pub mod config;
-use arena::Arena;
+use arena::{Arena, Offset};
 pub use config::Config;
 pub mod registry;
 pub(crate) use registry::Registry;
@@ -47,12 +48,31 @@ pub(crate) trait Dyn: 'static + Pointee<Metadata = DynMetadata<Self>> {}
 impl<T: ?Sized + 'static + Pointee<Metadata = DynMetadata<T>>> Dyn for T {}
 
 struct ContextLink {
-    queue: Box<dyn Tx<Msg>>,
+    queue: Box<dyn Tx<(Offset, Msg)>>,
+}
+
+impl ContextLink {
+    pub(crate) fn send_msg<T: ?Sized>(
+        &mut self,
+        key: Key<T>,
+        f: impl 'static + Send + FnOnce(&mut T),
+    ) -> Result<(), ()>
+    where
+        <T as Pointee>::Metadata: 'static,
+    {
+        let queued_fn = Box::new(move |ptr| {
+            let ptr = std::ptr::from_raw_parts_mut(ptr as *mut (), key.meta);
+            let dest = unsafe { &mut *ptr };
+            f(dest)
+        });
+        self.queue.send((key.loc.offset, queued_fn)).map_err(|_| ())
+    }
 }
 
 pub struct Context {
     internal_messages: LocalQueue<Box<dyn Fn(*mut u8)>>,
     links: HashMap<ContextId, ContextLink>,
+    arena: Arena,
     _unsend_marker: PhantomUnsend,
 }
 
@@ -63,24 +83,9 @@ impl Context {
         ContextBuilder::default()
     }
 
-    fn send(&mut self, dest: Loc, f: Msg) {
-        let conn = self.links.get_mut(&dest.context_id).unwrap();
-        conn.queue.send(f);
-    }
-
-    pub(crate) fn send_msg<T: ?Sized>(
-        &mut self,
-        key: Key<T>,
-        f: impl 'static + Send + FnOnce(&mut T),
-    ) where
-        <T as Pointee>::Metadata: 'static,
-    {
-        let queued_fn = Box::new(move |ptr| {
-            let ptr = std::ptr::from_raw_parts_mut(ptr as *mut (), key.meta);
-            let dest = unsafe { &mut *ptr };
-            f(dest)
-        });
-        self.send(key.loc, queued_fn);
+    pub(crate) fn process_msg(&mut self, offset: Offset, msg: Msg) {
+        let ptr = self.arena.offset(offset);
+        msg(ptr);
     }
 }
 
@@ -132,8 +137,9 @@ impl ContextBuilder {
     }
 
     pub fn build(self, mut actor_configs: HashMap<ActorId, Box<dyn Any>>) -> Context {
-        let mut arena = self.arena.unwrap();
+        let arena = self.arena.unwrap();
         let mut context = Context {
+            arena,
             internal_messages: LocalQueue::unbounded(),
             links: HashMap::default(),
             _unsend_marker: Default::default(),
@@ -142,12 +148,12 @@ impl ContextBuilder {
         let tree = self.tree.unwrap();
         for actor in self.actors.unwrap() {
             let init_stage = InitStage {
-                context: &mut context,
+                links: &mut context.links,
                 tree: &tree,
                 actor_being_constructed: actor.id,
             };
             let offset = actor.loc.offset;
-            let buf = arena.at_offset(offset.0 as usize, actor.vtable.layout());
+            let buf = context.arena.at_offset(offset, actor.vtable.layout());
 
             let config = actor_configs.remove(&actor.id).unwrap();
             (actor.vtable.constructor)(&init_stage, buf, config).unwrap();
@@ -163,7 +169,7 @@ impl ContextBuilder {
 }
 
 pub struct InitStage<'init> {
-    pub(crate) context: &'init mut Context,
+    pub(crate) links: &'init mut HashMap<ContextId, ContextLink>,
     pub(crate) tree: &'init ActorTree,
     pub(crate) actor_being_constructed: ActorId,
 }

@@ -5,21 +5,13 @@ pub(crate) struct Offset(pub(crate) u32);
 
 pub(crate) struct Arena {
     pub(crate) data: NonNull<u8>,
-    pub(crate) capacity: usize,
+    pub(crate) capacity: u32,
 }
 
 // safety: Arena can be sent as long as nothing has been constructed in it
 unsafe impl Send for Arena {}
 
-#[derive(Copy, Clone)]
-pub(crate) struct ArenaSlice(isize, usize);
-
-#[derive(Default)]
-pub(crate) struct ArenaBuilder {
-    layouts: Vec<Layout>,
-}
-
-fn compute_space_required(layouts: &[Layout]) -> usize {
+fn compute_space_required(layouts: &[Layout]) -> u32 {
     let mut res: usize = 0;
     let mut known_align: usize = 1;
     let mut curr_offset: usize = 0;
@@ -39,7 +31,7 @@ fn compute_space_required(layouts: &[Layout]) -> usize {
         res += size;
         curr_offset = (curr_offset + size) % known_align;
     }
-    res
+    res.try_into().unwrap()
 }
 
 fn get_offsets(mut start: *mut u8, layouts: &[Layout]) -> Vec<Offset> {
@@ -54,29 +46,24 @@ fn get_offsets(mut start: *mut u8, layouts: &[Layout]) -> Vec<Offset> {
 }
 
 impl Arena {
-    pub(crate) fn at_offset(&mut self, offset: usize, layout: Layout) -> &mut [u8] {
-        let ptr = self.data.as_ptr().wrapping_add(offset);
+    pub(crate) fn at_offset(&mut self, offset: Offset, layout: Layout) -> &mut [u8] {
+        let ptr = self.data.as_ptr().wrapping_add(offset.0 as usize);
         assert_eq!(ptr.align_offset(layout.align()), 0);
-        assert!(self.data.as_ptr().wrapping_add(self.capacity) > ptr.wrapping_add(layout.size()));
-        unsafe { std::slice::from_raw_parts_mut(ptr, layout.size()) }
-    }
-
-    pub(crate) unsafe fn at_offset_unchecked(
-        &mut self,
-        offset: usize,
-        layout: Layout,
-    ) -> &mut [u8] {
-        let ptr = self.data.as_ptr().wrapping_add(offset);
-        debug_assert_eq!(ptr.align_offset(layout.align()), 0);
-        debug_assert!(
-            self.data.as_ptr().wrapping_add(self.capacity) > ptr.wrapping_add(layout.size())
+        assert!(
+            self.data.as_ptr().wrapping_add(self.capacity as usize)
+                > ptr.wrapping_add(layout.size())
         );
         unsafe { std::slice::from_raw_parts_mut(ptr, layout.size()) }
     }
 
+    pub(crate) fn offset(&mut self, offset: Offset) -> *mut u8 {
+        self.data.as_ptr().wrapping_add(offset.0 as usize)
+    }
+
     pub(crate) fn from_layouts(layouts: &[Layout]) -> (Arena, Vec<Offset>) {
         let capacity = compute_space_required(layouts);
-        let ptr = unsafe { std::alloc::alloc(Layout::from_size_align(capacity, 1).unwrap()) };
+        let ptr =
+            unsafe { std::alloc::alloc(Layout::from_size_align(capacity as usize, 1).unwrap()) };
         let arena = Arena {
             data: NonNull::new(ptr).unwrap(),
             capacity,
@@ -88,7 +75,7 @@ impl Arena {
 impl Drop for Arena {
     fn drop(&mut self) {
         let ptr = self.data.as_ptr();
-        let layout = Layout::from_size_align(self.capacity, 1).unwrap();
+        let layout = Layout::from_size_align(self.capacity as usize, 1).unwrap();
         unsafe { std::alloc::dealloc(ptr, layout) };
     }
 }
