@@ -1,12 +1,12 @@
 #![feature(ptr_metadata, const_type_id)]
 
-use actor::{ActorVTable, TraitId};
+use actor::ActorVTable;
+use lookup::{ActorTree, BroadcastGroup, Key, Loc, Query};
 pub use paste;
 use queue::{local::LocalQueue, Tx};
-use registry::DynMetaPlaceholder;
 use serde::Deserialize;
 use std::{
-    any::{Any, TypeId},
+    any::Any,
     collections::HashMap,
     fmt::Debug,
     marker::PhantomData,
@@ -15,6 +15,7 @@ use std::{
 };
 
 mod actor;
+mod lookup;
 pub mod queue;
 pub use actor::{uniquely_named, Actor, UniquelyNamed};
 mod arena;
@@ -62,18 +63,24 @@ impl Context {
         ContextBuilder::default()
     }
 
-    fn send(&mut self, dest: UntypedRef, f: Msg) {
+    fn send(&mut self, dest: Loc, f: Msg) {
         let conn = self.links.get_mut(&dest.context_id).unwrap();
         conn.queue.send(f);
     }
 
-    pub(crate) fn send_msg<T>(&mut self, r: Ref<T>, f: impl 'static + Send + FnOnce(&mut T)) {
+    pub(crate) fn send_msg<T: ?Sized>(
+        &mut self,
+        key: Key<T>,
+        f: impl 'static + Send + FnOnce(&mut T),
+    ) where
+        <T as Pointee>::Metadata: 'static,
+    {
         let queued_fn = Box::new(move |ptr| {
-            let ptr = ptr as *mut T;
+            let ptr = std::ptr::from_raw_parts_mut(ptr as *mut (), key.meta);
             let dest = unsafe { &mut *ptr };
             f(dest)
         });
-        self.send(r.loc, queued_fn);
+        self.send(key.loc, queued_fn);
     }
 }
 
@@ -81,50 +88,7 @@ impl Context {
 struct ActorData {
     id: ActorId,
     vtable: &'static ActorVTable,
-    loc: UntypedRef,
-}
-
-#[derive(Default)]
-struct ActorTree {
-    // TODO: actually make this a tree
-    actors: Vec<ActorData>,
-}
-
-impl ActorTree {
-    fn lookup<T: Actor>(&self, from_actor: ActorId) -> impl '_ + Iterator<Item = Ref<T>> {
-        let type_id = TypeId::of::<T>();
-        self.actors
-            .iter()
-            .filter(move |actor| actor.vtable.type_id == type_id)
-            .map(|actor| Ref {
-                loc: actor.loc,
-                _phantom: PhantomData,
-            })
-    }
-
-    fn lookup_dyn<T: ?Sized + Dyn>(
-        &self,
-        from_actor: ActorId,
-    ) -> impl '_ + Iterator<Item = DynRef<T>> {
-        let trait_id = TraitId::of::<T>();
-        let types = match Registry::get().trait_types.get(&trait_id) {
-            Some(types) => types.as_ref(),
-            None => &[],
-        };
-        self.actors
-            .iter()
-            .filter_map(|actor| {
-                Some((
-                    actor,
-                    types.iter().find(|x| x.type_id == actor.vtable.type_id)?,
-                ))
-            })
-            .map(|(actor, t)| DynRef {
-                dyn_metadata: t.dyn_meta,
-                _phantom: PhantomData,
-                loc: actor.loc,
-            })
-    }
+    loc: Loc,
 }
 
 #[derive(Default)]
@@ -153,9 +117,9 @@ impl ContextBuilder {
                 .map(|(offset, (id, vtable))| ActorData {
                     id,
                     vtable,
-                    loc: UntypedRef {
+                    loc: Loc {
                         context_id: self.id.unwrap(),
-                        offset_ptr: offset.try_into().unwrap(),
+                        offset,
                     },
                 })
                 .collect(),
@@ -182,8 +146,8 @@ impl ContextBuilder {
                 tree: &tree,
                 actor_being_constructed: actor.id,
             };
-            let offset = actor.loc.offset_ptr;
-            let buf = arena.at_offset(offset as usize, actor.vtable.layout());
+            let offset = actor.loc.offset;
+            let buf = arena.at_offset(offset.0 as usize, actor.vtable.layout());
 
             let config = actor_configs.remove(&actor.id).unwrap();
             (actor.vtable.constructor)(&init_stage, buf, config).unwrap();
@@ -204,48 +168,27 @@ pub struct InitStage<'init> {
     pub(crate) actor_being_constructed: ActorId,
 }
 
-#[derive(Clone, Copy)]
-struct UntypedRef {
-    context_id: ContextId,
-    offset_ptr: u32,
-}
-
-#[derive(Clone, Copy)]
-pub struct DynRef<T: ?Sized> {
-    dyn_metadata: DynMetaPlaceholder,
-    loc: UntypedRef,
-    _phantom: PhantomData<*const T>,
-}
-
-#[derive(Clone, Copy)]
-pub struct Ref<T: ?Sized> {
-    loc: UntypedRef,
-    _phantom: PhantomData<*const T>,
-}
-
-impl<T> Ref<T> {
-    fn from_loc(loc: UntypedRef) -> Self {
-        Self {
-            loc,
-            _phantom: PhantomData,
+impl InitStage<'_> {
+    pub fn query<T: ?Sized>(&self) -> Query<T> {
+        Query {
+            tree: &self.tree,
+            actor_being_constructed: self.actor_being_constructed,
+            phantom: PhantomData,
         }
-    }
-
-    fn send(self, stage: &mut MainStage, f: impl 'static + Send + FnOnce(&mut T)) {
-        stage.context.send_msg(self, f);
-    }
-}
-
-impl<'a> InitStage<'a> {
-    pub fn request<T: Actor>(&self) -> impl '_ + Iterator<Item = Ref<T>> {
-        self.tree.lookup::<T>(self.actor_being_constructed)
-    }
-    pub fn request_dyn<T: ?Sized + Dyn>(&self) -> impl '_ + Iterator<Item = DynRef<T>> {
-        self.tree.lookup_dyn::<T>(self.actor_being_constructed)
     }
 }
 
 pub struct MainStage {
     pub(crate) context: Context,
     pub(crate) actor_running: ActorId,
+}
+
+impl MainStage {
+    fn broadcast<T>(&mut self, f: impl Send + Clone + Fn(&mut T)) {}
+    fn broadcast_mut<T>(
+        &mut self,
+        group: BroadcastGroup<T>,
+        f: impl Send + Clone + FnOnce(&mut T),
+    ) {
+    }
 }

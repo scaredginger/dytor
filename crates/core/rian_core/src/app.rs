@@ -4,7 +4,7 @@ use crate::{ActorId, ActorTree, Config, Context, ContextId, Registry};
 
 // break it down into stages
 // 1. Partition actors into threaded contexts
-// 2. Allocate spaces for actors, giving each a Ref
+// 2. Allocate spaces for actors, giving each a Key
 // 3. Construct queues between the threads
 // 4. For each context, spawn a thread and construct all the objects
 // 5. Start handling messages

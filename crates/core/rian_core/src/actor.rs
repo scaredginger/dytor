@@ -2,10 +2,11 @@ use std::alloc::Layout;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::mem::{align_of, MaybeUninit};
+use std::ptr::DynMetadata;
 
 use serde::de::{Deserialize, DeserializeOwned};
 
-use crate::{Dyn, InitStage};
+use crate::InitStage;
 
 pub use rian_proc_macros::{uniquely_named, UniquelyNamed};
 
@@ -23,8 +24,8 @@ pub trait Actor: Any + Unpin + Sized + UniquelyNamed {
 pub struct TraitId(TypeId);
 
 impl TraitId {
-    pub(crate) const fn of<T: ?Sized + Dyn>() -> Self {
-        TraitId(TypeId::of::<T>())
+    pub(crate) const fn of<T: ?Sized + 'static>() -> Self {
+        TraitId(TypeId::of::<DynMetadata<T>>())
     }
 }
 

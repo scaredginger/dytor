@@ -1,5 +1,8 @@
 use std::{alloc::Layout, ptr::NonNull};
 
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
+pub(crate) struct Offset(pub(crate) u32);
+
 pub(crate) struct Arena {
     pub(crate) data: NonNull<u8>,
     pub(crate) capacity: usize,
@@ -39,12 +42,12 @@ fn compute_space_required(layouts: &[Layout]) -> usize {
     res
 }
 
-fn get_offsets(mut start: *mut u8, layouts: &[Layout]) -> Vec<usize> {
+fn get_offsets(mut start: *mut u8, layouts: &[Layout]) -> Vec<Offset> {
     let mut res = Vec::with_capacity(layouts.len());
     for layout in layouts {
         let addr = start.wrapping_add(start.align_offset(layout.align()));
         let offset = unsafe { addr.offset_from(start) }.try_into().unwrap();
-        res.push(offset);
+        res.push(Offset(offset));
         start = addr.wrapping_add(layout.size());
     }
     res
@@ -71,7 +74,7 @@ impl Arena {
         unsafe { std::slice::from_raw_parts_mut(ptr, layout.size()) }
     }
 
-    pub(crate) fn from_layouts(layouts: &[Layout]) -> (Arena, Vec<usize>) {
+    pub(crate) fn from_layouts(layouts: &[Layout]) -> (Arena, Vec<Offset>) {
         let capacity = compute_space_required(layouts);
         let ptr = unsafe { std::alloc::alloc(Layout::from_size_align(capacity, 1).unwrap()) };
         let arena = Arena {

@@ -5,4 +5,4 @@ pub use serde_yaml;
 
 pub use rian_core::*;
 
-pub trait CommonTrait {}
+pub trait CommonTrait: 'static {}
