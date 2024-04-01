@@ -8,7 +8,7 @@ pub struct LocalQueue<T> {
 }
 
 impl<T: 'static> LocalQueue<T> {
-    fn send(&mut self, value: T) -> WriteResult<T> {
+    pub fn send(&mut self, value: T) -> WriteResult<T> {
         if self.capacity.is_some_and(|c| c.get() >= self.queue.len()) {
             return Err(WriteErr::Full(value));
         }
@@ -16,7 +16,7 @@ impl<T: 'static> LocalQueue<T> {
         Ok(())
     }
 
-    fn recv(&mut self) -> ReadResult<T> {
+    pub fn recv(&mut self) -> ReadResult<T> {
         self.queue.pop_front().ok_or(ReadErr::Empty)
     }
 

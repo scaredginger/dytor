@@ -1,7 +1,7 @@
 use core::sync::atomic::AtomicPtr;
 use std::any::{type_name, Any, TypeId};
 use std::mem::MaybeUninit;
-use std::ptr::{DynMetadata};
+use std::ptr::DynMetadata;
 
 pub(crate) use __private::InterfaceMetadata;
 use __private::ListNode;
@@ -20,10 +20,11 @@ pub struct RegistryBuilder {
 pub(crate) struct Registry {
     pub(crate) actor_types: HashMap<TypeId, ActorVTable>,
     pub(crate) trait_types: HashMap<TraitId, Box<[InterfaceMetadata]>>,
+    pub(crate) name_to_type_id: HashMap<&'static str, TypeId>,
 }
 
 impl Registry {
-    pub fn get() -> &'static Self {
+    pub(crate) fn get() -> &'static Self {
         use std::sync::atomic::Ordering;
         use std::sync::OnceLock;
 
@@ -41,14 +42,24 @@ impl Registry {
                 actor_types,
                 trait_types,
             } = registry;
+
+            // TODO: ensure uniqueness
+            let name_to_type_id = actor_types.iter().map(|(k, v)| ((v.name)(), *k)).collect();
             Registry {
                 actor_types,
                 trait_types: trait_types
                     .into_iter()
                     .map(|(k, v)| (k, v.into_boxed_slice()))
                     .collect(),
+                name_to_type_id,
             }
         })
+    }
+
+    pub(crate) fn by_name(&self, name: &str) -> Option<(TypeId, &ActorVTable)> {
+        let type_id = self.name_to_type_id.get(name)?;
+        let vtable = self.actor_types.get(type_id)?;
+        Some((*type_id, vtable))
     }
 }
 
@@ -76,7 +87,7 @@ macro_rules! register_actor {
                 static NODE: ListNode = ListNode::new(|r| init_fn::<$struct>(r, get_metadata()));
 
                 #[ctor::ctor]
-                fn init() {
+                fn $struct() {
                     init_node(&NODE);
                 }
             }
@@ -112,6 +123,7 @@ pub mod __private {
     use crate::Dyn;
     use core::{ptr, sync::atomic::Ordering};
     pub use ctor;
+    pub use libc;
 
     pub fn metadata_helper<D: ?Sized + Dyn, S: 'static>(
         ptr: *const D,

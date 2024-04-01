@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use serde::Deserialize;
 
-use crate::ContextId;
+use crate::context::ContextId;
 
 #[derive(Deserialize)]
 pub struct ActorConfig {

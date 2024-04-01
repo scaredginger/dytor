@@ -6,7 +6,19 @@ use std::{
     sync::Arc,
 };
 
-use crate::{actor::TraitId, arena::Offset, ActorData, ActorId, ContextId, Registry};
+use crate::{
+    actor::{ActorVTable, TraitId},
+    arena::Offset,
+    context::ActorId,
+    ContextId, Registry,
+};
+
+#[derive(Clone)]
+pub(crate) struct ActorData {
+    pub(crate) id: ActorId,
+    pub(crate) vtable: &'static ActorVTable,
+    pub(crate) loc: Loc,
+}
 
 #[derive(Default)]
 pub(crate) struct ActorTree {
@@ -88,6 +100,15 @@ where
             .into_boxed_slice();
 
         BroadcastGroup { by_context }
+    }
+}
+
+impl<'a, T: ?Sized + 'static> From<Query<'a, T>> for BroadcastGroup<T>
+where
+    ActorTree: Lookup<T, <T as Pointee>::Metadata>,
+{
+    fn from(value: Query<T>) -> Self {
+        value.broadcast_group()
     }
 }
 

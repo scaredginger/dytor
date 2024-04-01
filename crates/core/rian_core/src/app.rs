@@ -1,6 +1,9 @@
 use std::{any::TypeId, collections::HashMap, sync::Arc};
 
-use crate::{ActorId, ActorTree, Config, Context, ContextId, Registry};
+use crate::{
+    context::ActorId, context::Context, lookup::ActorTree, runtime::ContextInfo, Config, ContextId,
+    Registry,
+};
 
 // break it down into stages
 // 1. Partition actors into threaded contexts
@@ -23,25 +26,18 @@ pub fn run(config: &Config) {
     // .iter()
     // .map(|ctx| (ctx.id, Context::builder()));
 
-    let mut context = Context::builder().with_id(ContextId(1));
+    let actors = Vec::from_iter(
+        ns.actors
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (ActorId(i as u32), c)),
+    );
+    let (_, rx) = std::sync::mpsc::channel();
+    let info = ContextInfo::new(ContextId(1), actors, Box::new(rx));
 
-    let registry = Registry::get();
-    let actors_by_name: HashMap<&'static str, TypeId> =
-        HashMap::from_iter(registry.actor_types.iter().map(|(k, v)| ((v.name)(), *k)));
+    let mut at = ActorTree::default();
+    at.actors.extend(info.actors.iter().cloned());
 
-    let actors = Vec::from_iter(ns.actors.iter().enumerate().map(|(i, c)| {
-        let type_id = actors_by_name.get(c.typename.as_ref()).unwrap();
-        let actor = registry.actor_types.get(type_id).unwrap();
-        (ActorId(i as u32), actor)
-    }));
-    let actors = context.place_actors(actors).to_owned();
-    context.set_tree(Arc::new(ActorTree { actors }));
-
-    let configs = HashMap::from_iter(ns.actors.iter().enumerate().map(|(i, c)| {
-        let type_id = actors_by_name.get(c.typename.as_ref()).unwrap();
-        let actor = registry.actor_types.get(type_id).unwrap();
-        let config = (actor.deserialize_yaml_value)(&c.config).unwrap();
-        (ActorId(i as u32), config)
-    }));
-    let _context = context.build(configs);
+    crate::runtime::run([info], Arc::new(at));
+    // let _context = context.build(configs);
 }

@@ -2,6 +2,9 @@
 members = ["./crates/examples/*", "./crates/core/*"]
 resolver = "2"
 
+[profile.dev]
+sanitizer = true
+
 [workspace.dependencies]
 anyhow = { version = "*", default-features = false }
 ctor = { version = "*", default-features = false }

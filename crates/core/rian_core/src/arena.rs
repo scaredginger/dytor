@@ -34,13 +34,15 @@ fn compute_space_required(layouts: &[Layout]) -> u32 {
     res.try_into().unwrap()
 }
 
-fn get_offsets(mut start: *mut u8, layouts: &[Layout]) -> Vec<Offset> {
+fn get_offsets(start: *mut u8, layouts: &[Layout]) -> Vec<Offset> {
     let mut res = Vec::with_capacity(layouts.len());
+    let mut curr = start;
+
     for layout in layouts {
-        let addr = start.wrapping_add(start.align_offset(layout.align()));
+        let addr = curr.wrapping_add(curr.align_offset(layout.align()));
         let offset = unsafe { addr.offset_from(start) }.try_into().unwrap();
         res.push(Offset(offset));
-        start = addr.wrapping_add(layout.size());
+        curr = addr.wrapping_add(layout.size());
     }
     res
 }
