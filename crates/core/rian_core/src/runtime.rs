@@ -72,6 +72,8 @@ fn run_init_stage(info: ContextInfo, tree: &ActorTree) -> Context {
         _unsend_marker: Default::default(),
     };
 
+    let mut dependence_relations = Vec::new();
+
     for (actor, config) in actors.into_iter().zip(actor_configs) {
         let mut init_stage = InitStage {
             send_stage: SendStage {
@@ -81,13 +83,22 @@ fn run_init_stage(info: ContextInfo, tree: &ActorTree) -> Context {
             },
             tree: &tree,
             actor_being_constructed: actor.id,
+            dependence_relations: &mut dependence_relations,
         };
         let offset = actor.loc.offset;
         let buf = context.arena.at_offset(offset, actor.vtable.layout());
         (actor.vtable.constructor)(&mut init_stage, buf, config).unwrap();
     }
 
+    if check_for_cycles() {
+        panic!("Cycle detected");
+    }
+
     context
+}
+
+fn check_for_cycles() -> bool {
+    unimplemented!()
 }
 
 fn run_main_stage(ctx: &mut Context) {

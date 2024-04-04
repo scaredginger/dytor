@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     arena::{Arena, Offset},
-    lookup::{ActorTree, BroadcastGroup, Key, Query},
+    lookup::{ActorTree, BroadcastGroup, DependenceRelation, Key, Query},
     queue::{Rx, Tx},
 };
 
@@ -85,6 +85,7 @@ pub struct InitStage<'init> {
     pub(crate) send_stage: SendStage<'init>,
     pub(crate) tree: &'init ActorTree,
     pub(crate) actor_being_constructed: ActorId,
+    pub(crate) dependence_relations: &'init mut Vec<DependenceRelation>,
 }
 
 impl<'a> Deref for InitStage<'a> {
@@ -102,10 +103,12 @@ impl<'a> DerefMut for InitStage<'a> {
 }
 
 impl InitStage<'_> {
-    pub fn query<T: ?Sized>(&self) -> Query<T> {
+    pub fn query<T: ?Sized>(&mut self) -> Query<T> {
         Query {
             tree: &self.tree,
             actor_being_constructed: self.actor_being_constructed,
+            curr_context: self.context_id,
+            dependence_relations: &mut self.dependence_relations,
             phantom: PhantomData,
         }
     }
