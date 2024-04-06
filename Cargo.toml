@@ -16,6 +16,7 @@ quote = { version = "*", default-features = false }
 serde = { version = "*", default-features = false }
 serde_yaml = { version = "*", default-features = false }
 syn = { version = "*", default-features = false }
+tokio = { version = "*", default-features = false, features = ["full"] }
 
 rian = { version = "0.1.0", path = "./crates/core/rian" }
 rian_core = { version = "0.1.0", path = "./crates/core/rian_core" }

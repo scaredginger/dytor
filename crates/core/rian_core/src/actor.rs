@@ -8,7 +8,7 @@ use serde::de::{Deserialize, DeserializeOwned};
 
 pub use rian_proc_macros::{uniquely_named, UniquelyNamed};
 
-use crate::context::InitStage;
+use crate::context::InitArgs;
 
 pub trait UniquelyNamed {
     fn name() -> &'static str;
@@ -17,7 +17,7 @@ pub trait UniquelyNamed {
 pub trait Actor: Any + Unpin + Sized + UniquelyNamed {
     type Config: Debug + DeserializeOwned + Send;
 
-    fn instantiate(data: &mut InitStage, config: Self::Config) -> anyhow::Result<Self>;
+    fn instantiate(args: InitArgs<Self>, config: Self::Config) -> anyhow::Result<Self>;
 }
 
 #[derive(Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq)]
@@ -31,11 +31,13 @@ impl TraitId {
 
 #[derive(Clone, Copy)]
 pub(crate) struct ActorVTable {
-    pub(crate) deserialize_yaml_value:
-        fn(&serde_yaml::Value) -> anyhow::Result<Box<dyn Any + Send>>,
-    pub(crate) constructor:
-        fn(&mut InitStage, dest: &mut [u8], config: Box<dyn Any>) -> anyhow::Result<()>,
-    pub(crate) drop: fn(&mut [u8]),
+    pub(crate) deserialize_yaml_value: fn(serde_yaml::Value) -> anyhow::Result<Box<dyn Any + Send>>,
+    pub(crate) constructor: for<'a, 'b> unsafe fn(
+        InitArgs<'a, ()>,
+        dest: &'b mut [u8],
+        config: Box<dyn Any>,
+    ) -> anyhow::Result<()>,
+    pub(crate) drop: unsafe fn(&mut [u8]),
     pub(crate) name: fn() -> &'static str,
     pub(crate) type_id: TypeId,
     size: usize,
@@ -53,18 +55,20 @@ impl ActorVTable {
                 Ok(x) => Ok(Box::new(x) as _),
                 Err(e) => anyhow::bail!("Could not deserialize config for {} {e:?}", T::name()),
             },
-            constructor: |init_data, dest, config| {
-                assert!(dest.len() <= std::mem::size_of::<T>());
+            constructor: |args, dest, config| {
+                assert_eq!(dest.len(), std::mem::size_of::<T>());
                 let config: Box<T::Config> = config.downcast().unwrap();
                 let dest: *mut MaybeUninit<T> = dest.as_mut_ptr().cast();
                 assert_eq!(dest.align_offset(align_of::<T>()), 0);
 
-                let res = T::instantiate(init_data, *config)?;
+                let args = unsafe { std::mem::transmute(args) };
+
+                let res = T::instantiate(args, *config)?;
                 unsafe { &mut *dest }.write(res);
                 Ok(())
             },
             drop: |buf| {
-                assert!(buf.len() <= std::mem::size_of::<T>());
+                assert_eq!(buf.len(), std::mem::size_of::<T>());
                 let this = buf.as_mut_ptr().cast::<T>();
                 assert_eq!(this.align_offset(align_of::<T>()), 0);
                 unsafe { std::ptr::drop_in_place(this) }

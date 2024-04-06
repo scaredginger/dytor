@@ -12,6 +12,7 @@ ctor.workspace = true
 paste.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
+tokio.workspace = true
 
 libc.version = "*"
 

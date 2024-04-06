@@ -3,7 +3,7 @@
 
 use std::ptr::{DynMetadata, Pointee};
 
-pub use context::{ContextId, InitStage, MainStage};
+pub use context::{ContextId, InitArgs, MainArgs};
 
 pub use paste;
 
@@ -16,9 +16,10 @@ pub mod config;
 pub use config::Config;
 pub mod registry;
 pub(crate) use registry::Registry;
-pub mod app;
 mod context;
 mod runtime;
+
+pub use runtime::run;
 
 pub(crate) trait Dyn: 'static + Pointee<Metadata = DynMetadata<Self>> {}
 impl<T: ?Sized + 'static + Pointee<Metadata = DynMetadata<T>>> Dyn for T {}

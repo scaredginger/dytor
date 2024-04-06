@@ -1,4 +1,4 @@
-use rian::{register_actor, Actor, CommonTrait, InitStage, UniquelyNamed};
+use rian::{register_actor, Actor, CommonTrait, InitArgs, UniquelyNamed};
 
 #[derive(UniquelyNamed, Debug)]
 pub struct Bar {
@@ -12,7 +12,7 @@ register_actor!(Bar {
 impl Actor for Bar {
     type Config = ();
 
-    fn instantiate(data: &mut InitStage, config: ()) -> anyhow::Result<Self> {
+    fn instantiate(args: InitArgs<Self>, config: ()) -> anyhow::Result<Self> {
         Ok(Self { s: "Success 2" })
     }
 }

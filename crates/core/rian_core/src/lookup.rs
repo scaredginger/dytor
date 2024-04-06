@@ -10,7 +10,7 @@ use crate::{
     actor::{ActorVTable, TraitId},
     arena::Offset,
     context::ActorId,
-    ContextId, Registry,
+    ContextId, InitArgs, Registry,
 };
 
 #[derive(Clone)]
@@ -86,25 +86,30 @@ pub(crate) struct DependenceRelation {
     to: ActorId,
 }
 
-pub struct Query<'a, T: ?Sized> {
-    pub(crate) dependence_relations: &'a mut Vec<DependenceRelation>,
-    pub(crate) tree: &'a ActorTree,
-    pub(crate) actor_being_constructed: ActorId,
-    pub(crate) curr_context: ContextId,
+pub struct Query<'a, 'b, T: ?Sized, ActorT> {
+    pub(crate) init_args: &'a mut InitArgs<'b, ActorT>,
     pub(crate) phantom: PhantomData<T>,
 }
 
-impl<'a, T: 'static + ?Sized> Query<'a, T>
+impl<'a, 'b, T: 'static + ?Sized, ActorT> Query<'a, 'b, T, ActorT>
 where
     ActorTree: Lookup<T, <T as Pointee>::Metadata>,
 {
-    pub fn all_keys(self) -> impl 'a + Iterator<Item = (ActorId, Key<T>)> {
-        self.tree.lookup(self.actor_being_constructed)
+    pub fn all_keys(&mut self) -> impl '_ + Iterator<Item = (ActorId, Key<T>)> {
+        self.init_args
+            .data
+            .tree
+            .lookup(self.init_args.actor_being_constructed)
     }
 
     pub fn broadcast_group(self) -> BroadcastGroup<T> {
         let mut map: HashMap<_, Vec<_>> = HashMap::new();
-        for (_, key) in self.tree.lookup(self.actor_being_constructed) {
+        for (_, key) in self
+            .init_args
+            .data
+            .tree
+            .lookup(self.init_args.actor_being_constructed)
+        {
             map.entry(key.loc.context_id)
                 .or_default()
                 .push((key.loc.offset, key.meta));
@@ -119,16 +124,27 @@ where
         BroadcastGroup { by_context }
     }
 
-    pub fn acyclic_local_key(self) -> AcyclicLocalKey<T> {
-        let mut it = self.tree.lookup(self.actor_being_constructed);
+    pub fn acyclic_local_key(&mut self) -> AcyclicLocalKey<T> {
+        let mut it = self
+            .init_args
+            .data
+            .tree
+            .lookup(self.init_args.actor_being_constructed);
         let (local_actor_id, local_actor_key) = it.next().unwrap();
         assert!(it.next().is_none());
-        assert!(local_actor_key.loc.context_id == self.curr_context);
+        assert_eq!(local_actor_key.loc.context_id, self.init_args.data.data.id);
+        assert_ne!(local_actor_id, self.init_args.actor_being_constructed);
+        drop(it);
 
-        self.dependence_relations.push(DependenceRelation {
-            from: self.actor_being_constructed,
-            to: local_actor_id,
-        });
+        let from = self.init_args.actor_being_constructed;
+
+        self.init_args
+            .data
+            .dependence_relations
+            .push(DependenceRelation {
+                from,
+                to: local_actor_id,
+            });
 
         AcyclicLocalKey {
             offset: local_actor_key.loc.offset,
@@ -137,11 +153,11 @@ where
     }
 }
 
-impl<'a, T: ?Sized + 'static> From<Query<'a, T>> for BroadcastGroup<T>
+impl<'a, 'b, T: ?Sized + 'static, ActorT> From<Query<'a, 'b, T, ActorT>> for BroadcastGroup<T>
 where
     ActorTree: Lookup<T, <T as Pointee>::Metadata>,
 {
-    fn from(value: Query<T>) -> Self {
+    fn from(value: Query<T, ActorT>) -> Self {
         value.broadcast_group()
     }
 }
@@ -168,11 +184,11 @@ pub struct AcyclicLocalKey<T: ?Sized> {
     pub(crate) meta: <T as Pointee>::Metadata,
 }
 
-impl<'a, T: ?Sized + 'static> From<Query<'a, T>> for AcyclicLocalKey<T>
+impl<'a, 'b, T: ?Sized + 'static, ActorT> From<Query<'a, 'b, T, ActorT>> for AcyclicLocalKey<T>
 where
     ActorTree: Lookup<T, <T as Pointee>::Metadata>,
 {
-    fn from(value: Query<T>) -> Self {
+    fn from(mut value: Query<T, ActorT>) -> Self {
         value.acyclic_local_key()
     }
 }

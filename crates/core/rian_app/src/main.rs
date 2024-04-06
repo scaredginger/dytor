@@ -1,14 +1,17 @@
 use std::{collections::HashMap, path::Path};
 
 use rian::{
-    config::{ActorConfig, Scope},
-    serde_yaml, ContextId,
+    config::{ActorConfig, Context, Scope},
+    serde_yaml, tokio, ContextId,
 };
 
 fn main() {
     let config = rian_app::Config {
         rian: rian::Config {
-            contexts: vec![],
+            contexts: vec![Context {
+                id: ContextId::new(1).unwrap(),
+                thread_affinity: None,
+            }],
             root: Scope {
                 name: None,
                 children: HashMap::default(),
@@ -16,12 +19,12 @@ fn main() {
                     ActorConfig {
                         typename: "Foo".into(),
                         config: serde_yaml::Value::String("foo_config".into()),
-                        context: ContextId::from_u32(0),
+                        context: ContextId::new(1).unwrap(),
                     },
                     ActorConfig {
                         typename: "Bar".into(),
                         config: serde_yaml::Value::Null,
-                        context: ContextId::from_u32(0),
+                        context: ContextId::new(1).unwrap(),
                     },
                 ],
                 imported_scopes: vec![],
@@ -42,5 +45,10 @@ fn main() {
         })
         .collect();
 
-    rian::app::run(&config.rian);
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    rian::run(config.rian, rt.handle());
 }

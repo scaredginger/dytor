@@ -8,19 +8,21 @@ pub trait Queue<T: Send> {
     fn channel() -> (Self::Tx, Self::Rx);
 }
 
-pub trait Rx<T: Send>: Send {
+pub trait Rx<T: Send>: 'static + Send {
     fn recv(&mut self) -> ReadResult<T>;
 }
 
-pub trait Tx<T: Send>: Send {
+pub trait Tx<T: Send>: 'static + Send {
     fn send(&mut self, value: T) -> WriteResult<T>;
 }
 
+#[derive(Debug)]
 pub enum ReadErr {
     Empty,
     Finished,
 }
 
+#[derive(Debug)]
 pub enum WriteErr<T> {
     Finished(T),
     Full(T),

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use rian::lookup::BroadcastGroup;
-use rian::{register_actor, Actor, InitStage, UniquelyNamed};
+use rian::{register_actor, Actor, InitArgs, UniquelyNamed};
 
 use rian::CommonTrait;
 
@@ -21,10 +21,17 @@ register_actor!(Foo {
 impl Actor for Foo {
     type Config = Arc<str>;
 
-    fn instantiate(data: &mut InitStage, s: Arc<str>) -> anyhow::Result<Self> {
-        let common: BroadcastGroup<dyn CommonTrait> = data.query().into();
-        data.broadcast(common, |_, t| {
+    fn instantiate(mut args: InitArgs<Self>, s: Arc<str>) -> anyhow::Result<Self> {
+        let common: BroadcastGroup<dyn CommonTrait> = args.query().into();
+        args.broadcast(common, |_, t| {
             t.print_self();
+        });
+        let mut acc = args.accessor();
+        args.tokio_handle().spawn(async move {
+            acc.send(|_, _| {
+                println!("Sent");
+            })
+            .unwrap();
         });
         Ok(Self { s })
     }

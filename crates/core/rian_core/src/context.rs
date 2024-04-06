@@ -1,8 +1,9 @@
 use std::{
-    collections::HashMap,
     marker::PhantomData,
+    num::NonZeroU32,
     ops::{Deref, DerefMut},
-    ptr::Pointee,
+    ptr::{self, Pointee},
+    sync::Arc,
 };
 
 use serde::Deserialize;
@@ -10,33 +11,54 @@ use serde::Deserialize;
 use crate::{
     arena::{Arena, Offset},
     lookup::{ActorTree, BroadcastGroup, DependenceRelation, Key, Query},
-    queue::{Rx, Tx},
+    queue::{Rx, Tx, WriteErr, WriteResult},
 };
 
 type PhantomUnsend = PhantomData<*mut ()>;
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct ActorId(pub(crate) u32);
+pub(crate) struct ActorId(pub(crate) NonZeroU32);
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
-pub struct ContextId(pub(crate) u32);
+pub struct ContextId(pub(crate) NonZeroU32);
 
-impl ContextId {
-    #[must_use]
-    pub fn from_u32(x: u32) -> Self {
-        Self(x)
-    }
+macro_rules! impl_inner_ops {
+    ($struct_name:ident) => {
+        impl $struct_name {
+            #[must_use]
+            pub fn new(x: u32) -> Option<Self> {
+                Some(Self(std::num::NonZeroU32::new(x)?))
+            }
+
+            #[must_use]
+            pub(crate) fn as_u32(self) -> u32 {
+                self.0.into()
+            }
+
+            #[must_use]
+            pub(crate) fn as_index(self) -> usize {
+                (self.as_u32() - 1) as usize
+            }
+        }
+    };
 }
+
+impl_inner_ops!(ActorId);
+impl_inner_ops!(ContextId);
 
 type LocalQueue = crate::queue::local::LocalQueue<Box<dyn Fn(&mut Context)>>;
 
-pub struct Context {
-    pub(crate) context_id: ContextId,
+pub(crate) struct ContextData {
+    pub(crate) id: ContextId,
     pub(crate) local_queue: LocalQueue,
-    pub(crate) links: HashMap<ContextId, ContextLink>,
+    pub(crate) links: Box<[ContextLink]>,
     pub(crate) rx: MsgRx,
+}
+
+pub struct Context {
+    pub(crate) data: ContextData,
     pub(crate) arena: Arena,
     pub(crate) _unsend_marker: PhantomUnsend,
 }
@@ -51,8 +73,14 @@ impl Context {
     }
 }
 
+impl ContextData {
+    fn link_mut(&mut self, other: ContextId) -> &mut ContextLink {
+        &mut self.links[other.as_index() - (self.id > other) as usize]
+    }
+}
+
 pub(crate) struct ContextLink {
-    queue: MsgTx,
+    pub(crate) queue: MsgTx,
 }
 
 impl ContextLink {
@@ -68,117 +96,142 @@ impl ContextLink {
         let meta = key.meta;
         let queued_fn = Box::new(move |ctx: &mut Context| {
             let ptr = ctx.arena.offset(offset);
-            let ptr = std::ptr::from_raw_parts_mut(ptr as *mut (), meta);
+            let ptr = ptr::from_raw_parts_mut(ptr as *mut (), meta);
             f(unsafe { &mut *ptr })
         });
         self.queue.send(queued_fn).map_err(|_| ())
     }
 }
 
-pub struct SendStage<'a> {
-    pub(crate) links: &'a mut HashMap<ContextId, ContextLink>,
-    pub(crate) context_id: ContextId,
-    pub(crate) local_queue: &'a mut LocalQueue,
+pub(crate) struct InitData {
+    pub(crate) data: ContextData,
+    pub(crate) tree: Arc<ActorTree>,
+    pub(crate) dependence_relations: Vec<DependenceRelation>,
+    pub(crate) make_tx: Box<dyn 'static + Send + Fn() -> MsgTx>,
+    pub(crate) tokio_rt: tokio::runtime::Handle,
 }
 
-pub struct InitStage<'init> {
-    pub(crate) send_stage: SendStage<'init>,
-    pub(crate) tree: &'init ActorTree,
+pub struct InitArgs<'a, ActorT> {
+    pub(crate) data: &'a mut InitData,
     pub(crate) actor_being_constructed: ActorId,
-    pub(crate) dependence_relations: &'init mut Vec<DependenceRelation>,
+    pub(crate) actor_offset: Offset,
+    pub(crate) _phantom: PhantomData<ActorT>,
 }
 
-impl<'a> Deref for InitStage<'a> {
-    type Target = SendStage<'a>;
+impl Deref for InitData {
+    type Target = ContextData;
 
     fn deref(&self) -> &Self::Target {
-        &self.send_stage
+        &self.data
     }
 }
 
-impl<'a> DerefMut for InitStage<'a> {
+impl DerefMut for InitData {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.send_stage
+        &mut self.data
     }
 }
 
-impl InitStage<'_> {
-    pub fn query<T: ?Sized>(&mut self) -> Query<T> {
+impl<'a, ActorT> InitArgs<'a, ActorT> {
+    pub fn query<T: ?Sized>(&mut self) -> Query<'_, 'a, T, ActorT> {
         Query {
-            tree: &self.tree,
-            actor_being_constructed: self.actor_being_constructed,
-            curr_context: self.context_id,
-            dependence_relations: &mut self.dependence_relations,
+            init_args: self,
             phantom: PhantomData,
+        }
+    }
+
+    pub fn broadcast<T: ?Sized>(
+        &mut self,
+        group: BroadcastGroup<T>,
+        f: impl 'static + Send + Clone + Fn(&mut MainArgs, &mut T),
+    ) where
+        <T as Pointee>::Metadata: 'static,
+    {
+        self.data.broadcast(group, f)
+    }
+
+    pub fn tokio_handle(&self) -> &tokio::runtime::Handle {
+        &self.data.tokio_rt
+    }
+}
+
+impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
+    pub fn accessor(&mut self) -> Accessor<ActorT> {
+        Accessor {
+            offset: self.actor_offset,
+            ctx_queue: (self.data.make_tx)(),
+            _phantom: PhantomData,
         }
     }
 }
 
-pub struct MainStage<'a> {
-    send_stage: SendStage<'a>,
+pub struct MainArgs<'a> {
+    context_data: &'a mut ContextData,
 }
 
-impl<'a> Deref for MainStage<'a> {
-    type Target = SendStage<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.send_stage
-    }
-}
-
-impl<'a> DerefMut for MainStage<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.send_stage
-    }
-}
-
-impl<'a> SendStage<'a> {
+impl ContextData {
     pub fn broadcast<T: ?Sized>(
         &mut self,
         group: BroadcastGroup<T>,
-        f: impl 'static + Send + Clone + Fn(&mut MainStage, &mut T),
+        f: impl 'static + Send + Clone + Fn(&mut MainArgs, &mut T),
     ) where
         <T as Pointee>::Metadata: 'static,
     {
         for (id, refs) in group.by_context.as_ref() {
-            if *id == self.context_id {
+            if *id == self.id {
                 let refs = refs.clone();
                 let f = f.clone();
                 self.local_queue.send(Box::new(move |ctx: &mut Context| {
                     for (offset, meta) in refs.as_ref() {
-                        let ptr = std::ptr::from_raw_parts_mut(
-                            ctx.arena.offset(*offset) as *mut (),
-                            *meta,
-                        );
-                        let mut ms = MainStage {
-                            send_stage: SendStage {
-                                links: &mut ctx.links,
-                                context_id: ctx.context_id,
-                                local_queue: &mut ctx.local_queue,
-                            },
+                        let ptr =
+                            ptr::from_raw_parts_mut(ctx.arena.offset(*offset) as *mut (), *meta);
+                        let mut ms = MainArgs {
+                            context_data: &mut ctx.data,
                         };
                         f(&mut ms, unsafe { &mut *ptr });
                     }
                 }));
             } else {
-                let link = self.links.get_mut(id).unwrap();
                 let refs = refs.clone();
                 let f = f.clone();
-                link.queue.send(Box::new(move |ctx| {
+                self.link_mut(*id).queue.send(Box::new(move |ctx| {
                     for (offset, meta) in refs.as_ref() {
                         let ptr = ctx.arena.offset(*offset);
-                        let ptr = std::ptr::from_raw_parts_mut(ptr as *mut (), *meta);
-                        let mut ms = MainStage {
-                            send_stage: SendStage {
-                                links: &mut ctx.links,
-                                context_id: ctx.context_id,
-                                local_queue: &mut ctx.local_queue,
-                            },
+                        let ptr = ptr::from_raw_parts_mut(ptr as *mut (), *meta);
+                        let mut ms = MainArgs {
+                            context_data: &mut ctx.data,
                         };
                         f(&mut ms, unsafe { &mut *ptr });
                     }
                 }));
             }
         }
+    }
+}
+
+pub struct Accessor<T: 'static> {
+    offset: Offset,
+    ctx_queue: Box<dyn 'static + Tx<Msg>>,
+    _phantom: PhantomData<T>,
+}
+
+impl<T: 'static + Send> Accessor<T> {
+    pub fn send(
+        &mut self,
+        f: impl 'static + Send + FnOnce(&mut MainArgs, &mut T) -> (),
+    ) -> WriteResult<()> {
+        let offset = self.offset;
+        let queued_fn = Box::new(move |ctx: &mut Context| {
+            let ptr = ctx.arena.offset(offset);
+            let ptr = ptr::from_raw_parts_mut(ptr as *mut (), ());
+            let mut ms = MainArgs {
+                context_data: &mut ctx.data,
+            };
+            f(&mut ms, unsafe { &mut *ptr });
+        });
+        self.ctx_queue.send(queued_fn).map_err(|e| match e {
+            WriteErr::Finished(_) => WriteErr::Finished(()),
+            WriteErr::Full(_) => WriteErr::Full(()),
+        })
     }
 }
