@@ -1,8 +1,10 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use rian::{
     config::{ActorConfig, Context, Scope},
-    serde_yaml, tokio, ContextId,
+    serde_yaml,
+    tokio::{self, select, sync::mpsc, task::JoinSet},
+    ContextId,
 };
 
 fn main() {
@@ -23,6 +25,11 @@ fn main() {
                     },
                     ActorConfig {
                         typename: "Bar".into(),
+                        config: serde_yaml::Value::Null,
+                        context: ContextId::new(1).unwrap(),
+                    },
+                    ActorConfig {
+                        typename: "Foo2".into(),
                         config: serde_yaml::Value::Null,
                         context: ContextId::new(1).unwrap(),
                     },
@@ -50,5 +57,29 @@ fn main() {
         .build()
         .unwrap();
 
-    rian::run(config.rian, rt.handle());
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let spawn_fn = Arc::new(move |fut| tx.send(fut).unwrap());
+    rt.spawn(async move {
+        let mut js = JoinSet::new();
+        loop {
+            if js.is_empty() {
+                let Some(fut) = rx.recv().await else {
+                    break;
+                };
+                js.spawn(fut);
+            }
+            select! {
+                _ = js.join_next() => {}
+                 fut = rx.recv() => {
+                     let Some(fut) = fut else {
+                        break;
+                     };
+                     js.spawn(fut);
+                 }
+            }
+        }
+        while let Some(_) = js.join_next().await {}
+    });
+
+    rian::run(config.rian, spawn_fn);
 }

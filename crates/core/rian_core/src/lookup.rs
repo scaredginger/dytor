@@ -2,7 +2,7 @@ use std::{
     any::TypeId,
     collections::HashMap,
     marker::PhantomData,
-    ptr::{DynMetadata, Pointee},
+    ptr::{self, DynMetadata, Pointee},
     sync::Arc,
 };
 
@@ -10,7 +10,7 @@ use crate::{
     actor::{ActorVTable, TraitId},
     arena::Offset,
     context::ActorId,
-    ContextId, InitArgs, Registry,
+    ContextId, InitArgs, MainArgs, Registry,
 };
 
 #[derive(Clone)]
@@ -192,5 +192,24 @@ where
 {
     fn from(mut value: Query<T, ActorT>) -> Self {
         value.acyclic_local_key()
+    }
+}
+
+impl<T: ?Sized> AcyclicLocalKey<T> {
+    /// This has to take &mut self since we can 'launder' the MainArgs borrow with call()
+    pub fn borrow_mut(&mut self, args: &mut MainArgs) -> &mut T {
+        let ptr: *mut T = ptr::from_raw_parts_mut(args.arena.offset(self.offset) as _, self.meta);
+        unsafe { &mut *ptr }
+    }
+
+    /// f can't be FnMut or FnOnce so that people won't capture mutable refs to other AcyclicLocalKeys,
+    /// which has the potential to break aliasing rules in cases like the diamond pattern
+    pub fn call<'a, 'b, R: 'a>(
+        &'a mut self,
+        args: &'a mut MainArgs,
+        f: impl Fn(&'a mut MainArgs, &'a mut T) -> R,
+    ) -> R {
+        let ptr: *mut T = ptr::from_raw_parts_mut(args.arena.offset(self.offset) as _, self.meta);
+        f(args, unsafe { &mut *ptr })
     }
 }

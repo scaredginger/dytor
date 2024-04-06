@@ -12,7 +12,7 @@ register_actor!(Bar {
 impl Actor for Bar {
     type Config = ();
 
-    fn instantiate(args: InitArgs<Self>, config: ()) -> anyhow::Result<Self> {
+    fn init(args: InitArgs<Self>, config: ()) -> anyhow::Result<Self> {
         Ok(Self { s: "Success 2" })
     }
 }

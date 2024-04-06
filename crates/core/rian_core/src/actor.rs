@@ -17,7 +17,7 @@ pub trait UniquelyNamed {
 pub trait Actor: Any + Unpin + Sized + UniquelyNamed {
     type Config: Debug + DeserializeOwned + Send;
 
-    fn instantiate(args: InitArgs<Self>, config: Self::Config) -> anyhow::Result<Self>;
+    fn init(args: InitArgs<Self>, config: Self::Config) -> anyhow::Result<Self>;
 }
 
 #[derive(Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq)]
@@ -63,7 +63,7 @@ impl ActorVTable {
 
                 let args = unsafe { std::mem::transmute(args) };
 
-                let res = T::instantiate(args, *config)?;
+                let res = T::init(args, *config)?;
                 unsafe { &mut *dest }.write(res);
                 Ok(())
             },

@@ -1,7 +1,9 @@
 use std::{
+    future::Future,
     marker::PhantomData,
     num::NonZeroU32,
     ops::{Deref, DerefMut},
+    pin::Pin,
     ptr::{self, Pointee},
     sync::Arc,
 };
@@ -10,7 +12,7 @@ use serde::Deserialize;
 
 use crate::{
     arena::{Arena, Offset},
-    lookup::{ActorTree, AcyclicLocalKey, BroadcastGroup, DependenceRelation, Key, Query},
+    lookup::{ActorTree, BroadcastGroup, DependenceRelation, Key, Query},
     queue::{Rx, Tx, WriteErr, WriteResult},
 };
 
@@ -103,12 +105,15 @@ impl ContextLink {
     }
 }
 
+pub(crate) type SpawnFn =
+    Arc<dyn 'static + Sync + Send + Fn(Pin<Box<dyn 'static + Future<Output = ()> + Send>>)>;
+
 pub(crate) struct InitData {
     pub(crate) data: ContextData,
     pub(crate) tree: Arc<ActorTree>,
     pub(crate) dependence_relations: Vec<DependenceRelation>,
     pub(crate) make_tx: Box<dyn 'static + Send + Fn() -> MsgTx>,
-    pub(crate) tokio_rt: tokio::runtime::Handle,
+    pub(crate) spawn_fn: SpawnFn,
 }
 
 pub struct InitArgs<'a, ActorT> {
@@ -150,13 +155,13 @@ impl<'a, ActorT> InitArgs<'a, ActorT> {
         self.data.broadcast(group, f)
     }
 
-    pub fn tokio_handle(&self) -> &tokio::runtime::Handle {
-        &self.data.tokio_rt
+    pub fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) {
+        (self.data.spawn_fn)(Box::pin(fut))
     }
 }
 
 impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
-    pub fn accessor(&mut self) -> Accessor<ActorT> {
+    pub fn accessor(&self) -> Accessor<ActorT> {
         Accessor {
             offset: self.actor_offset,
             ctx_queue: (self.data.make_tx)(),
@@ -166,16 +171,11 @@ impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
 }
 
 pub struct MainArgs<'a> {
-    context_data: &'a mut ContextData,
-    arena: &'a Arena,
+    pub(crate) context_data: &'a mut ContextData,
+    pub(crate) arena: &'a Arena,
 }
 
-impl<'a> MainArgs<'a> {
-    pub fn get_mut<T: ?Sized>(&mut self, key: &mut AcyclicLocalKey<T>) -> &mut T {
-        let ptr: *mut T = ptr::from_raw_parts_mut(self.arena.offset(key.offset) as _, key.meta);
-        unsafe { &mut *ptr }
-    }
-}
+impl<'a> MainArgs<'a> {}
 
 impl ContextData {
     pub fn broadcast<T: ?Sized>(
@@ -231,17 +231,17 @@ unsafe impl<T: 'static> Send for Accessor<T> {}
 impl<T: 'static> Accessor<T> {
     pub fn send(
         &mut self,
-        f: impl 'static + Send + FnOnce(&mut MainArgs, &mut T) -> (),
+        f: impl 'static + Send + FnOnce(MainArgs, &mut T) -> (),
     ) -> WriteResult<()> {
         let offset = self.offset;
         let queued_fn = Box::new(move |ctx: &mut Context| {
             let ptr = ctx.arena.offset(offset);
             let ptr = ptr::from_raw_parts_mut(ptr as *mut (), ());
-            let mut ms = MainArgs {
+            let ms = MainArgs {
                 context_data: &mut ctx.data,
                 arena: &ctx.arena,
             };
-            f(&mut ms, unsafe { &mut *ptr });
+            f(ms, unsafe { &mut *ptr });
         });
         self.ctx_queue.send(queued_fn).map_err(|e| match e {
             WriteErr::Finished(_) => WriteErr::Finished(()),

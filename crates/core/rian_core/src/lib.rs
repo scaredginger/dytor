@@ -19,6 +19,7 @@ pub(crate) use registry::Registry;
 mod context;
 mod runtime;
 
+pub use context::Accessor;
 pub use runtime::run;
 
 pub(crate) trait Dyn: 'static + Pointee<Metadata = DynMetadata<Self>> {}

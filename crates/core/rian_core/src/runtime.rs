@@ -3,21 +3,23 @@ use std::{
     sync::{mpsc, Arc},
 };
 
+use tokio::task::JoinSet;
+
 use crate::{
     actor::ActorVTable,
     arena::{Arena, Offset},
     config::ActorConfig,
     context::{
         ActorId, Context, ContextData, ContextId, ContextLink, InitArgs, InitData, Msg, MsgRx,
-        MsgTx,
+        MsgTx, SpawnFn,
     },
     lookup::{ActorData, ActorTree, DependenceRelation, Loc},
     queue::local::LocalQueue,
     Config, Registry,
 };
 
-pub fn run(config: Config, tokio_rt: &tokio::runtime::Handle) {
-    let args = create_context_args(config, tokio_rt);
+pub fn run(config: Config, spawn_fn: SpawnFn) {
+    let args = create_context_args(config, spawn_fn);
 
     std::thread::scope(|s| {
         let mut args = args.into_iter();
@@ -29,10 +31,7 @@ pub fn run(config: Config, tokio_rt: &tokio::runtime::Handle) {
     });
 }
 
-fn create_context_args(
-    config: Config,
-    tokio_rt: &tokio::runtime::Handle,
-) -> Vec<ContextConstructorArgs> {
+fn create_context_args(config: Config, spawn_fn: SpawnFn) -> Vec<ContextConstructorArgs> {
     let ns = config.root;
     if !ns.children.is_empty() {
         unimplemented!("Namespaces");
@@ -118,7 +117,7 @@ fn create_context_args(
             arena,
             links,
             make_tx: Box::new(move || Box::new(self_tx.clone())),
-            tokio_rt: tokio_rt.clone(),
+            spawn_fn: spawn_fn.clone(),
             tree: None,
         })
     }
@@ -146,7 +145,7 @@ struct ContextConstructorArgs {
     links: Box<[ContextLink]>,
     tree: Option<Arc<ActorTree>>,
     make_tx: Box<dyn 'static + Send + Fn() -> MsgTx>,
-    tokio_rt: tokio::runtime::Handle,
+    spawn_fn: SpawnFn,
 }
 
 pub fn allocate_actors(
@@ -185,7 +184,7 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         links,
         tree,
         make_tx,
-        tokio_rt,
+        spawn_fn,
     } = info;
     let data = ContextData {
         id,
@@ -199,7 +198,7 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         tree: tree.unwrap(),
         dependence_relations: Vec::new(),
         make_tx,
-        tokio_rt,
+        spawn_fn,
     };
 
     for actor in actors {
@@ -220,7 +219,7 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         dependence_relations,
         tree: _,
         make_tx: _,
-        tokio_rt: _,
+        spawn_fn: _,
     } = init_data;
 
     if has_cycles(dependence_relations) {
