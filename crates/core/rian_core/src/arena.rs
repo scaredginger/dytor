@@ -58,7 +58,7 @@ impl Arena {
         unsafe { std::slice::from_raw_parts_mut(ptr, layout.size()) }
     }
 
-    pub(crate) fn offset(&mut self, offset: Offset) -> *mut u8 {
+    pub(crate) fn offset(&self, offset: Offset) -> *mut u8 {
         self.data.as_ptr().wrapping_add(offset.0 as usize)
     }
 

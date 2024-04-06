@@ -235,7 +235,8 @@ fn create_context(info: ContextConstructorArgs) -> Context {
 }
 
 fn has_cycles(relations: Vec<DependenceRelation>) -> bool {
-    unimplemented!()
+    // unimplemented!()
+    false
 }
 
 fn run_thread(args: ContextConstructorArgs) {

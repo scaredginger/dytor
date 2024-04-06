@@ -1,22 +1,17 @@
 use std::sync::Arc;
 
-use rian::lookup::BroadcastGroup;
+use rian::lookup::{AcyclicLocalKey, BroadcastGroup};
 use rian::{register_actor, Actor, InitArgs, UniquelyNamed};
 
 use rian::CommonTrait;
 
-#[derive(UniquelyNamed, Debug)]
+#[derive(UniquelyNamed)]
 pub struct Foo {
     s: Arc<str>,
+    foo: AcyclicLocalKey<dyn CommonTrait>,
 }
 
-trait ExampleTrait {}
-impl ExampleTrait for Foo {}
-
-register_actor!(Foo {
-    dyn CommonTrait,
-    dyn ExampleTrait,
-});
+register_actor!(Foo);
 
 impl Actor for Foo {
     type Config = Arc<str>;
@@ -28,11 +23,13 @@ impl Actor for Foo {
         });
         let mut acc = args.accessor();
         args.tokio_handle().spawn(async move {
-            acc.send(|_, _| {
-                println!("Sent");
+            acc.send(|ctx, this| {
+                let x = ctx.get_mut(&mut this.foo);
+                x.print_self();
             })
             .unwrap();
         });
-        Ok(Self { s })
+        let foo = args.query().into();
+        Ok(Self { s, foo })
     }
 }

@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::{
     arena::{Arena, Offset},
-    lookup::{ActorTree, BroadcastGroup, DependenceRelation, Key, Query},
+    lookup::{ActorTree, AcyclicLocalKey, BroadcastGroup, DependenceRelation, Key, Query},
     queue::{Rx, Tx, WriteErr, WriteResult},
 };
 
@@ -167,6 +167,14 @@ impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
 
 pub struct MainArgs<'a> {
     context_data: &'a mut ContextData,
+    arena: &'a Arena,
+}
+
+impl<'a> MainArgs<'a> {
+    pub fn get_mut<T: ?Sized>(&mut self, key: &mut AcyclicLocalKey<T>) -> &mut T {
+        let ptr: *mut T = ptr::from_raw_parts_mut(self.arena.offset(key.offset) as _, key.meta);
+        unsafe { &mut *ptr }
+    }
 }
 
 impl ContextData {
@@ -187,6 +195,7 @@ impl ContextData {
                             ptr::from_raw_parts_mut(ctx.arena.offset(*offset) as *mut (), *meta);
                         let mut ms = MainArgs {
                             context_data: &mut ctx.data,
+                            arena: &ctx.arena,
                         };
                         f(&mut ms, unsafe { &mut *ptr });
                     }
@@ -200,6 +209,7 @@ impl ContextData {
                         let ptr = ptr::from_raw_parts_mut(ptr as *mut (), *meta);
                         let mut ms = MainArgs {
                             context_data: &mut ctx.data,
+                            arena: &ctx.arena,
                         };
                         f(&mut ms, unsafe { &mut *ptr });
                     }
@@ -215,7 +225,10 @@ pub struct Accessor<T: 'static> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: 'static + Send> Accessor<T> {
+/// safety: only _phantom stops it from being send
+unsafe impl<T: 'static> Send for Accessor<T> {}
+
+impl<T: 'static> Accessor<T> {
     pub fn send(
         &mut self,
         f: impl 'static + Send + FnOnce(&mut MainArgs, &mut T) -> (),
@@ -226,6 +239,7 @@ impl<T: 'static + Send> Accessor<T> {
             let ptr = ptr::from_raw_parts_mut(ptr as *mut (), ());
             let mut ms = MainArgs {
                 context_data: &mut ctx.data,
+                arena: &ctx.arena,
             };
             f(&mut ms, unsafe { &mut *ptr });
         });

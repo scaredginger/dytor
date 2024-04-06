@@ -149,6 +149,7 @@ where
         AcyclicLocalKey {
             offset: local_actor_key.loc.offset,
             meta: local_actor_key.meta,
+            _phantom: PhantomData,
         }
     }
 }
@@ -182,6 +183,7 @@ pub struct Key<T: ?Sized> {
 pub struct AcyclicLocalKey<T: ?Sized> {
     pub(crate) offset: Offset,
     pub(crate) meta: <T as Pointee>::Metadata,
+    _phantom: PhantomData<*mut ()>,
 }
 
 impl<'a, 'b, T: ?Sized + 'static, ActorT> From<Query<'a, 'b, T, ActorT>> for AcyclicLocalKey<T>
