@@ -37,7 +37,7 @@ pub(crate) struct ActorVTable {
         dest: &'b mut [u8],
         config: Box<dyn Any>,
     ) -> anyhow::Result<()>,
-    pub(crate) drop: unsafe fn(&mut [u8]),
+    pub(crate) drop: unsafe fn(*mut u8),
     pub(crate) name: fn() -> &'static str,
     pub(crate) type_id: TypeId,
     size: usize,
@@ -67,10 +67,9 @@ impl ActorVTable {
                 unsafe { &mut *dest }.write(res);
                 Ok(())
             },
-            drop: |buf| {
-                assert_eq!(buf.len(), std::mem::size_of::<T>());
-                let this = buf.as_mut_ptr().cast::<T>();
-                assert_eq!(this.align_offset(align_of::<T>()), 0);
+            drop: |ptr| {
+                assert_eq!(ptr.align_offset(align_of::<T>()), 0);
+                let this = ptr.cast::<T>();
                 unsafe { std::ptr::drop_in_place(this) }
             },
             name: T::name,

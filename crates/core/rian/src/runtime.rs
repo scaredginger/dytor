@@ -201,6 +201,8 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         spawn_fn,
     };
 
+    let drop_fns: Vec<_> = actors.iter().map(|a| (a.offset, a.vtable.drop)).collect();
+
     for actor in actors {
         let init_stage = InitArgs {
             data: &mut init_data,
@@ -229,6 +231,7 @@ fn create_context(info: ContextConstructorArgs) -> Context {
     Context {
         data,
         arena,
+        drop_fns,
         _unsend_marker: Default::default(),
     }
 }

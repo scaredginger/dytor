@@ -62,18 +62,22 @@ pub(crate) struct ContextData {
 pub struct Context {
     pub(crate) data: ContextData,
     pub(crate) arena: Arena,
+    pub(crate) drop_fns: Vec<(Offset, unsafe fn(*mut u8))>,
     pub(crate) _unsend_marker: PhantomUnsend,
+}
+
+impl Drop for Context {
+    fn drop(&mut self) {
+        for &(offset, drop) in &self.drop_fns {
+            let ptr = self.arena.offset(offset);
+            unsafe { drop(ptr) };
+        }
+    }
 }
 
 pub(crate) type Msg = Box<dyn 'static + Send + FnOnce(&mut Context)>;
 pub(crate) type MsgRx = Box<dyn Rx<Msg>>;
 pub(crate) type MsgTx = Box<dyn Tx<Msg>>;
-
-impl Context {
-    pub(crate) fn process_msg(&mut self, msg: Msg) {
-        msg(self);
-    }
-}
 
 impl ContextData {
     fn link_mut(&mut self, other: ContextId) -> &mut ContextLink {
