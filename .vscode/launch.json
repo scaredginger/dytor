@@ -11,7 +11,7 @@
       "environment": [
         {
           "name": "LD_LIBRARY_PATH",
-          "value": "${workspaceFolder}/target/debug:/home/andrew/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib"
+          "value": "${workspaceFolder}/target/debug:~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib"
         }
       ]
     }

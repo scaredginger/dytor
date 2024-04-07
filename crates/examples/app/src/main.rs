@@ -49,8 +49,8 @@ fn main() {
             },
         },
         shared_lib_paths: vec![
-            Path::new("/home/andrew/rian/target/x86_64-unknown-linux-gnu/debug/liblib1.so").into(),
-            Path::new("/home/andrew/rian/target/x86_64-unknown-linux-gnu/debug/liblib2.so").into(),
+            Path::new("target/x86_64-unknown-linux-gnu/debug/liblib1.so").into(),
+            Path::new("target/x86_64-unknown-linux-gnu/debug/liblib2.so").into(),
         ],
     };
 
