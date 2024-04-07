@@ -1,10 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rian::lookup::{AcyclicLocalKey, BroadcastGroup};
-use rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
+use common::anyhow;
+use common::rian::lookup::{AcyclicLocalKey, BroadcastGroup};
+use common::rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
+use common::tokio::time::sleep;
 
-use rian::CommonTrait;
+use common::CommonTrait;
 
 #[derive(UniquelyNamed)]
 pub struct Foo2 {
@@ -78,7 +80,7 @@ impl Foo {
 
 async fn start_loop(mut accessor: Accessor<Foo>) {
     for _ in 0..5 {
-        rian::tokio::time::sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
         accessor
             .send(|args, this| this.first_callback(args))
             .unwrap();

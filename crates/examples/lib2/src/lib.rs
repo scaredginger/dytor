@@ -1,4 +1,7 @@
-use rian::{register_actor, Actor, CommonTrait, InitArgs, UniquelyNamed};
+use common::rian::{register_actor, Actor, InitArgs, UniquelyNamed};
+
+use common::anyhow;
+use common::CommonTrait;
 
 #[derive(UniquelyNamed, Debug)]
 pub struct Bar {

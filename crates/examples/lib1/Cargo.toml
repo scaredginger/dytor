@@ -7,6 +7,6 @@ edition = "2021"
 crate-type = ["rlib", "dylib"]
 
 [dependencies]
-anyhow.workspace = true
-rian.workspace = true
 serde = { workspace = true, features = ["derive", "rc", "std"] }
+
+common.path = "../common"

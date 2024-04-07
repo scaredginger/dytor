@@ -1,14 +1,25 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use rian::{
-    config::{ActorConfig, Context, Scope},
+use common::{
+    rian::{
+        self,
+        config::{ActorConfig, Context, Scope},
+        ContextId,
+    },
     serde_yaml,
     tokio::{self, select, sync::mpsc, task::JoinSet},
-    ContextId,
 };
 
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct Config {
+    rian: rian::Config,
+    shared_lib_paths: Vec<Arc<Path>>,
+}
+
 fn main() {
-    let config = rian_app::Config {
+    let config = Config {
         rian: rian::Config {
             contexts: vec![Context {
                 id: ContextId::new(1).unwrap(),

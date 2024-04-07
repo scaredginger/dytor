@@ -4,10 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["rlib", "dylib"]
+crate-type = ["rlib"]
 
 [dependencies]
-rian_core.workspace = true
+anyhow.workspace = true
+ctor.workspace = true
+paste.workspace = true
+serde.workspace = true
 serde_yaml.workspace = true
 tokio.workspace = true
-tokio.features = ["full"]
+
+libc.version = "*"
+
+rian_proc_macros.workspace = true

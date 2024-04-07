@@ -1,19 +1,26 @@
-#![feature(strict_provenance)]
+#![feature(ptr_metadata, const_type_id)]
+#![allow(private_bounds)]
 
-// re-export common libs here so they get linked into a single shared lib
-pub use rian_core as core;
-// pub use serde;
-pub use serde_yaml;
-pub use tokio;
+use std::ptr::{DynMetadata, Pointee};
 
-pub use rian_core::*;
+pub use context::{ContextId, InitArgs, MainArgs};
 
-pub trait CommonTrait: 'static {
-    fn print_self(&self);
-}
+pub use paste;
 
-impl<T: 'static + std::fmt::Debug> CommonTrait for T {
-    fn print_self(&self) {
-        println!("{self:?}");
-    }
-}
+mod actor;
+pub mod lookup;
+pub mod queue;
+pub use actor::{uniquely_named, Actor, UniquelyNamed};
+mod arena;
+pub mod config;
+pub use config::Config;
+pub mod registry;
+pub(crate) use registry::Registry;
+mod context;
+mod runtime;
+
+pub use context::Accessor;
+pub use runtime::run;
+
+pub(crate) trait Dyn: 'static + Pointee<Metadata = DynMetadata<Self>> {}
+impl<T: ?Sized + 'static + Pointee<Metadata = DynMetadata<T>>> Dyn for T {}
