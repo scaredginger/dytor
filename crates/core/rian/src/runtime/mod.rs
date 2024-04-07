@@ -40,10 +40,6 @@ fn create_context_args(config: Config, spawn_fn: SpawnFn) -> Vec<ContextConstruc
         unimplemented!("Namespaces");
     }
 
-    // let contexts = config
-    // .contexts
-    // .iter()
-    // .map(|ctx| (ctx.id, Context::builder()));
     assert!(
         config
             .contexts

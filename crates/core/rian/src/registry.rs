@@ -43,8 +43,10 @@ impl Registry {
                 trait_types,
             } = registry;
 
-            // TODO: ensure uniqueness
-            let name_to_type_id = actor_types.iter().map(|(k, v)| ((v.name)(), *k)).collect();
+            let mut name_to_type_id = HashMap::with_capacity(actor_types.len());
+            for (k, v) in &actor_types {
+                assert!(name_to_type_id.insert((v.name)(), *k).is_none());
+            }
             Registry {
                 actor_types,
                 trait_types: trait_types
