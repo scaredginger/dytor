@@ -3,8 +3,6 @@ use std::{
     sync::{mpsc, Arc},
 };
 
-use tokio::task::JoinSet;
-
 use crate::{
     actor::ActorVTable,
     arena::{Arena, Offset},
@@ -13,10 +11,12 @@ use crate::{
         ActorId, Context, ContextData, ContextId, ContextLink, InitArgs, InitData, Msg, MsgRx,
         MsgTx, SpawnFn,
     },
-    lookup::{ActorData, ActorTree, DependenceRelation, Loc},
+    lookup::{ActorData, ActorTree, Loc},
     queue::local::LocalQueue,
     Config, Registry,
 };
+
+mod graph;
 
 pub fn run(config: Config, spawn_fn: SpawnFn) {
     let args = create_context_args(config, spawn_fn);
@@ -148,7 +148,7 @@ struct ContextConstructorArgs {
     spawn_fn: SpawnFn,
 }
 
-pub fn allocate_actors(
+fn allocate_actors(
     configs: impl IntoIterator<Item = (ActorId, ActorConfig)>,
 ) -> (Arena, Vec<ActorConstructorInfo>) {
     let registry = Registry::get();
@@ -224,7 +224,7 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         spawn_fn: _,
     } = init_data;
 
-    if has_cycles(dependence_relations) {
+    if graph::has_cycles(&dependence_relations) {
         panic!("Cycle detected");
     }
 
@@ -234,11 +234,6 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         drop_fns,
         _unsend_marker: Default::default(),
     }
-}
-
-fn has_cycles(relations: Vec<DependenceRelation>) -> bool {
-    // unimplemented!()
-    false
 }
 
 fn run_thread(args: ContextConstructorArgs) {

@@ -82,8 +82,8 @@ where
 }
 
 pub(crate) struct DependenceRelation {
-    from: ActorId,
-    to: ActorId,
+    pub(crate) from: ActorId,
+    pub(crate) to: ActorId,
 }
 
 pub struct Query<'a, 'b, T: ?Sized, ActorT> {
