@@ -1,6 +1,9 @@
 use std::{
     iter, mem,
-    sync::{mpsc, Arc},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Arc, Barrier,
+    },
 };
 
 use crate::{
@@ -21,13 +24,16 @@ mod graph;
 pub fn run(config: Config) {
     let args = create_context_args(config);
 
+    let finished_counter = AtomicUsize::new(args.len());
+    let barrier = Barrier::new(args.len());
+    let barrier2 = Barrier::new(args.len());
     std::thread::scope(|s| {
         let mut args = args.into_iter();
         let fst = args.next().unwrap();
         for a in args {
-            s.spawn(|| run_thread(a));
+            s.spawn(|| run_thread(a, &finished_counter, &barrier, &barrier2));
         }
-        run_thread(fst);
+        run_thread(fst, &finished_counter, &barrier, &barrier2);
     });
 }
 
@@ -114,7 +120,6 @@ fn create_context_args(config: Config) -> Vec<ContextConstructorArgs> {
                 continue;
             }
         }
-        let self_tx = contexts[id.as_index()].tx.clone();
         constructor_args.push(ContextConstructorArgs {
             id,
             actors,
@@ -178,7 +183,13 @@ fn allocate_actors(
     (arena, constructor_info)
 }
 
-fn create_context(info: ContextConstructorArgs) -> Context {
+fn create_context(
+    info: ContextConstructorArgs,
+) -> (
+    Context,
+    Vec<(Offset, unsafe fn(*const u8) -> bool)>,
+    Vec<(Offset, unsafe fn(*mut u8))>,
+) {
     let ContextConstructorArgs {
         mut arena,
         id,
@@ -203,6 +214,12 @@ fn create_context(info: ContextConstructorArgs) -> Context {
     };
 
     let drop_fns: Vec<_> = actors.iter().map(|a| (a.offset, a.vtable.drop)).collect();
+    let is_finished_fns: Vec<_> = actors
+        .iter()
+        .map(|a| (a.offset, a.vtable.is_finished))
+        .collect();
+
+    let stop_fns: Vec<_> = actors.iter().map(|a| (a.offset, a.vtable.stop)).collect();
 
     for actor in actors {
         let init_stage = InitArgs {
@@ -230,20 +247,67 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         panic!("Cycle detected");
     }
 
-    Context {
-        data,
-        arena,
-        drop_fns,
-        _unsend_marker: Default::default(),
-    }
+    (
+        Context {
+            data,
+            arena,
+            drop_fns,
+            _unsend_marker: Default::default(),
+        },
+        is_finished_fns,
+        stop_fns,
+    )
 }
 
-fn run_thread(args: ContextConstructorArgs) {
-    let mut ctx = create_context(args);
-    while let Ok(msg) = ctx.data.rx.recv() {
-        msg(&mut ctx);
+fn run_thread(
+    args: ContextConstructorArgs,
+    counter: &AtomicUsize,
+    all_actors_finished: &Barrier,
+    all_shutdowns_completed: &Barrier,
+) {
+    let (mut ctx, is_finished_fns, stop_fns) = create_context(args);
+    let mut is_finished_fns = Some(is_finished_fns);
+
+    // TODO: fix this janky pos
+    let mut check_done = |ctx: &mut Context| {
+        if let Some(v) = is_finished_fns.as_deref() {
+            let finished = v
+                .iter()
+                .all(|&(offset, f)| unsafe { f(ctx.arena.offset(offset)) });
+
+            if finished {
+                is_finished_fns = None;
+                counter.fetch_sub(1, Ordering::Release);
+            }
+        };
+
+        counter.load(Ordering::Acquire) == 0
+    };
+    'outer: loop {
         while let Ok(msg) = ctx.data.local_queue.recv() {
             msg(&mut ctx);
         }
+        if check_done(&mut ctx) {
+            break 'outer;
+        }
+        while let Ok(msg) = ctx.data.rx.recv() {
+            msg(&mut ctx);
+            while let Ok(msg) = ctx.data.local_queue.recv() {
+                msg(&mut ctx);
+            }
+            if check_done(&mut ctx) {
+                break 'outer;
+            }
+        }
     }
+
+    all_actors_finished.wait();
+
+    for (offset, f) in stop_fns {
+        unsafe { f(ctx.arena.offset(offset)) };
+    }
+
+    all_shutdowns_completed.wait();
+    
+    drop(ctx);
 }

@@ -21,7 +21,7 @@ impl<T: 'static + Send> Rx<T> for Receiver<T> {
 }
 
 impl<T: 'static + Send> Tx<T> for Sender<T> {
-    fn send(&mut self, value: T) -> WriteResult<T> {
+    fn send(&self, value: T) -> WriteResult<T> {
         Sender::send(self, value).map_err(|SendError(v)| WriteErr::Finished(v))
     }
 }

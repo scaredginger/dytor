@@ -7,6 +7,4 @@ edition = "2021"
 crate-type = ["rlib", "dylib"]
 
 [dependencies]
-serde.workspace = true
-
 common.path = "../common"

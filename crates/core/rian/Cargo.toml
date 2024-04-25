@@ -9,6 +9,7 @@ crate-type = ["rlib"]
 [dependencies]
 anyhow.workspace = true
 ctor.workspace = true
+itertools.workspace = true
 paste.workspace = true
 serde.workspace = true
 serde-value.workspace = true

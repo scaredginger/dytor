@@ -18,4 +18,10 @@ impl Actor for Bar {
     fn init(args: InitArgs<Self>, config: ()) -> anyhow::Result<Self> {
         Ok(Self { s: "Success 2" })
     }
+
+    fn is_finished(&self) -> bool {
+        true
+    }
+
+    fn stop(&mut self) {}
 }

@@ -4,13 +4,16 @@ use std::thread;
 
 use common::anyhow;
 use common::rian::{register_actor, Actor, InitArgs, UniquelyNamed};
+use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::LocalSet;
+use tokio_util::sync::CancellationToken;
 
 #[derive(UniquelyNamed)]
 pub struct TokioSingleThread {
     thread: Option<thread::JoinHandle<()>>,
     task_tx: mpsc::UnboundedSender<LazyDynFut>,
+    token: CancellationToken,
 }
 
 register_actor!(TokioSingleThread);
@@ -20,11 +23,24 @@ impl Actor for TokioSingleThread {
 
     fn init(_args: InitArgs<Self>, _cfg: ()) -> anyhow::Result<Self> {
         let (task_tx, task_rx) = mpsc::unbounded_channel();
-        let thread = thread::spawn(move || run_async_event_loop(task_rx));
+        let token = CancellationToken::new();
+        let token2 = token.clone();
+        let thread = thread::spawn(move || run_async_event_loop(task_rx, token2));
         Ok(Self {
             thread: Some(thread),
             task_tx,
+            token,
         })
+    }
+
+    fn is_finished(&self) -> bool {
+        true
+    }
+
+    fn stop(&mut self) {
+        self.token.cancel();
+        let thread = self.thread.take().unwrap();
+        thread.join().unwrap();
     }
 }
 
@@ -43,14 +59,16 @@ impl TokioSingleThread {
 
 impl Drop for TokioSingleThread {
     fn drop(&mut self) {
-        let thread = self.thread.take().unwrap();
-        thread.join().unwrap();
+        assert!(self.thread.is_none());
     }
 }
 
 pub type LazyDynFut = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()>>> + Send + 'static>;
 
-fn run_async_event_loop(mut task_rx: mpsc::UnboundedReceiver<LazyDynFut>) {
+fn run_async_event_loop(
+    mut task_rx: mpsc::UnboundedReceiver<LazyDynFut>,
+    token: CancellationToken,
+) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .thread_name("TokioRuntimeWorker")
@@ -59,8 +77,19 @@ fn run_async_event_loop(mut task_rx: mpsc::UnboundedReceiver<LazyDynFut>) {
 
     let local = LocalSet::new();
     local.spawn_local(async move {
-        while let Some(f) = task_rx.recv().await {
-            tokio::task::spawn_local(f());
+        loop {
+            select! {
+                biased;
+
+                _ = token.cancelled() => break,
+
+                f = task_rx.recv() => {
+                    match f {
+                        Some(f) => tokio::task::spawn_local(f()),
+                        None => break,
+                    };
+                }
+            }
         }
     });
     rt.block_on(local);

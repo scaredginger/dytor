@@ -6,21 +6,24 @@ use std::pin::Pin;
 use common::anyhow::{anyhow, Result};
 use common::chrono::{DateTime, Utc};
 use common::rian::lookup::Key;
-use common::rian::{register_actor, Accessor, Actor, InitArgs, UniquelyNamed};
-use itertools::Itertools as _;
+use common::rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
+use common::itertools::Itertools as _;
 use tokio::sync::oneshot;
-use tokio_stream::{Stream, StreamExt};
+pub use tokio_stream::{Stream, StreamExt};
 
 use crate::TokioSingleThread;
 
+#[derive(Clone, Copy)]
 pub struct Event<T> {
-    timestamp: DateTime<Utc>,
-    tie_break: u64,
-    obj: T,
+    pub timestamp: DateTime<Utc>,
+    pub tie_break: u64,
+    pub obj: T,
 }
 
 #[derive(UniquelyNamed)]
-pub struct Synchronizer {}
+pub struct Synchronizer {
+    completed: bool,
+}
 
 register_actor!(Synchronizer);
 
@@ -34,11 +37,18 @@ impl Actor for Synchronizer {
             .exactly_one()
             .map_err(|_| anyhow!("Multiple tokio runtimes"))?;
         let sources = args.query().all_accessors().collect();
+        let this = args.accessor();
         args.send_msg(key, move |_, obj| {
-            obj.spawn_with(move || background_task(sources))
+            obj.spawn_with(move || background_task(this, sources))
         });
-        Ok(Self {})
+        Ok(Self { completed: false })
     }
+
+    fn is_finished(&self) -> bool {
+        self.completed
+    }
+
+    fn stop(&mut self) {}
 }
 
 mod private {
@@ -50,13 +60,16 @@ mod private {
 pub trait TypedProducer {
     type Item: Send + 'static;
 
-    fn event_stream(&self) -> impl Stream<Item = Event<Self::Item>> + Send + 'static;
-    fn process_event(&self, item: Event<Self::Item>);
+    fn event_stream(
+        &mut self,
+        args: MainArgs,
+    ) -> impl Stream<Item = Event<Self::Item>> + Send + 'static;
+    fn process_event(&mut self, args: MainArgs, item: Event<Self::Item>);
 }
 
 impl<T: TypedProducer> Producer for T {
-    fn create_stream(&self) -> DynStream {
-        Box::pin(TypedProducer::event_stream(self).map(
+    fn create_stream(&mut self, args: MainArgs) -> DynStream {
+        Box::pin(TypedProducer::event_stream(self, args).map(
             |Event {
                  timestamp,
                  tie_break,
@@ -72,7 +85,8 @@ impl<T: TypedProducer> Producer for T {
     }
 
     fn process_event(
-        &self,
+        &mut self,
+        args: MainArgs,
         Event {
             timestamp,
             tie_break,
@@ -84,15 +98,15 @@ impl<T: TypedProducer> Producer for T {
             tie_break,
             obj: *obj.downcast().unwrap(),
         };
-        TypedProducer::process_event(self, event);
+        TypedProducer::process_event(self, args, event);
     }
 }
 
 type DynStream = Pin<Box<dyn Send + Stream<Item = Event<Box<dyn Any + Send>>>>>;
 
 pub trait Producer: private::Sealed {
-    fn create_stream(&self) -> DynStream;
-    fn process_event(&self, item: Event<Box<dyn Any>>);
+    fn create_stream(&mut self, args: MainArgs) -> DynStream;
+    fn process_event(&mut self, args: MainArgs, item: Event<Box<dyn Any>>);
 }
 
 struct HeapEntry {
@@ -127,15 +141,18 @@ impl Ord for HeapEntry {
     }
 }
 
-async fn background_task(producers: Vec<Accessor<dyn Producer>>) {
+async fn background_task(
+    synchronizer: Accessor<Synchronizer>,
+    producers: Vec<Accessor<dyn Producer>>,
+) {
     let mut heap = BinaryHeap::with_capacity(producers.len());
 
     let futures: Vec<_> = producers
         .into_iter()
         .map(|mut acc| {
             let (tx, rx) = oneshot::channel();
-            acc.send(|_, p| {
-                tx.send(p.create_stream())
+            acc.send(|args, p| {
+                tx.send(p.create_stream(args))
                     .unwrap_or_else(|_| panic!("Could not send"))
             })
             .unwrap();
@@ -173,12 +190,15 @@ async fn background_task(producers: Vec<Accessor<dyn Producer>>) {
             tie_break,
             obj,
         } = next_event;
-        acc.send(move |_, p| {
-            p.process_event(Event {
-                timestamp,
-                tie_break,
-                obj: obj as _,
-            })
+        acc.send(move |args, p| {
+            p.process_event(
+                args,
+                Event {
+                    timestamp,
+                    tie_break,
+                    obj: obj as _,
+                },
+            )
         })
         .unwrap();
 
@@ -191,4 +211,9 @@ async fn background_task(producers: Vec<Accessor<dyn Producer>>) {
             });
         }
     }
+
+    synchronizer.send(|mut args, s| {
+        s.completed = true;
+        args.notify_completion();
+    });
 }

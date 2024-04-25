@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::{mpsc, Arc},
-};
+use std::{collections::HashMap, mem, path::Path, sync::Arc};
 
 use common::{
     rian::{
@@ -13,7 +9,8 @@ use common::{
     serde_value,
 };
 
-use serde::Deserialize;
+use common::serde::Deserialize;
+use serde_value::Value as SerdeValue;
 
 #[derive(Deserialize)]
 struct Config {
@@ -33,18 +30,23 @@ fn main() {
                 children: HashMap::default(),
                 actors: vec![
                     ActorConfig {
-                        typename: "Foo".into(),
-                        config: serde_value::Value::String("foo_config".into()),
+                        typename: "TokioSingleThread".into(),
+                        config: SerdeValue::Unit,
                         context: ContextId::new(1).unwrap(),
                     },
                     ActorConfig {
-                        typename: "Bar".into(),
-                        config: serde_value::Value::Unit,
+                        typename: "Synchronizer".into(),
+                        config: SerdeValue::Unit,
                         context: ContextId::new(1).unwrap(),
                     },
                     ActorConfig {
-                        typename: "Foo2".into(),
-                        config: serde_value::Value::Unit,
+                        typename: "IntervalUnitProducer".into(),
+                        config: SerdeValue::Unit,
+                        context: ContextId::new(1).unwrap(),
+                    },
+                    ActorConfig {
+                        typename: "IntervalUnitConsumer".into(),
+                        config: SerdeValue::Unit,
                         context: ContextId::new(1).unwrap(),
                     },
                 ],
@@ -54,17 +56,17 @@ fn main() {
         shared_lib_paths: vec![
             Path::new("target/x86_64-unknown-linux-gnu/debug/liblib1.so").into(),
             Path::new("target/x86_64-unknown-linux-gnu/debug/liblib2.so").into(),
+            Path::new("target/x86_64-unknown-linux-gnu/debug/libreplay_mock.so").into(),
         ],
     };
 
-    let _libs: Vec<_> = config
-        .shared_lib_paths
-        .iter()
-        .map(|p| {
-            let s = p.as_os_str();
-            unsafe { libloading::Library::new(s) }.unwrap()
-        })
-        .collect();
+    for p in &config.shared_lib_paths {
+        let s = p.as_os_str();
+        let lib= unsafe { libloading::Library::new(s) }.unwrap();
+        mem::forget(lib);
+    }
 
     rian::run(config.rian);
+    
 }
+

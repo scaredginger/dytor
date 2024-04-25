@@ -3,10 +3,13 @@ name = "replay"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["rlib", "dylib"]
+
 [dependencies]
-itertools.workspace = true
-serde.workspace = true
 tokio = { version = "*", features = ["full"] }
+tokio-util = "*"
 tokio-stream = { version = "*", features = ["full"] }
+serde.workspace = true
 
 common.path = "../common"

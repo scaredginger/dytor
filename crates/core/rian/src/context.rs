@@ -176,7 +176,7 @@ impl<'a, ActorT> InitArgs<'a, ActorT> {
 
     pub fn broadcast<T: ?Sized>(
         &mut self,
-        group: BroadcastGroup<T>,
+        group: &BroadcastGroup<T>,
         f: impl 'static + Send + Clone + Fn(&mut MainArgs, &mut T),
     ) where
         <T as Pointee>::Metadata: 'static,
@@ -210,12 +210,56 @@ pub struct MainArgs<'a> {
     pub(crate) arena: &'a Arena,
 }
 
-impl<'a> MainArgs<'a> {}
+impl<'a> MainArgs<'a> {
+    pub fn send_msg<T: ?Sized>(
+        &mut self,
+        Key { loc, meta }: Key<T>,
+        f: impl 'static + Send + FnOnce(&mut MainArgs, &mut T),
+    ) where
+        <T as Pointee>::Metadata: 'static,
+    {
+        let f = Box::new(move |ctx: &mut Context| {
+            let ptr = ctx.arena.offset(loc.offset);
+            let ptr = ptr::from_raw_parts_mut(ptr as *mut (), meta);
+            let mut args = MainArgs {
+                context_data: &mut ctx.data,
+                arena: &ctx.arena,
+            };
+            f(&mut args, unsafe { &mut *ptr })
+        });
+        if self.context_data.id == loc.context_id {
+            self.context_data
+                .local_queue
+                .send(f)
+                .unwrap_or_else(|_| panic!("Local queue full"));
+        } else {
+            self.context_data
+                .link_mut(loc.context_id)
+                .queue
+                .send(f)
+                .unwrap_or_else(|_| panic!("Local queue full"));
+        }
+    }
+
+    pub fn broadcast<T: ?Sized>(
+        &mut self,
+        group: &BroadcastGroup<T>,
+        f: impl 'static + Send + Clone + Fn(&mut MainArgs, &mut T),
+    ) where
+        <T as Pointee>::Metadata: 'static,
+    {
+        self.context_data.broadcast(group, f)
+    }
+
+    pub fn notify_completion(&mut self) {
+        // todo!();
+    }
+}
 
 impl ContextData {
     pub fn broadcast<T: ?Sized>(
         &mut self,
-        group: BroadcastGroup<T>,
+        group: &BroadcastGroup<T>,
         f: impl 'static + Send + Clone + Fn(&mut MainArgs, &mut T),
     ) where
         <T as Pointee>::Metadata: 'static,
@@ -265,10 +309,7 @@ pub struct Accessor<T: ?Sized> {
 unsafe impl<T: ?Sized> Send for Accessor<T> {}
 
 impl<T: ?Sized + 'static> Accessor<T> {
-    pub fn send(
-        &mut self,
-        f: impl 'static + Send + FnOnce(MainArgs, &mut T) -> (),
-    ) -> WriteResult<()> {
+    pub fn send(&self, f: impl 'static + Send + FnOnce(MainArgs, &mut T) -> ()) -> WriteResult<()> {
         let offset = self.offset;
         let metadata = self.metadata;
         let queued_fn = Box::new(move |ctx: &mut Context| {

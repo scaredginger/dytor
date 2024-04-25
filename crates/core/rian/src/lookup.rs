@@ -6,6 +6,8 @@ use std::{
     sync::Arc,
 };
 
+use itertools::Itertools;
+
 use crate::{
     arena::Offset,
     context::ActorId,
@@ -103,6 +105,16 @@ where
             .map(|(_, b)| b)
     }
 
+    pub fn exactly_one_key(&mut self) -> Key<T> {
+        self.init_args
+            .data
+            .tree
+            .lookup(self.init_args.actor_being_constructed)
+            .exactly_one()
+            .map(|(_, key)| key)
+            .unwrap_or_else(|_| panic!())
+    }
+
     pub fn all_accessors(&mut self) -> impl '_ + Iterator<Item = Accessor<T>> {
         self.init_args
             .data
@@ -187,11 +199,21 @@ pub struct BroadcastGroup<T: ?Sized> {
     pub(crate) by_context: Box<[(ContextId, Arc<[(Offset, <T as Pointee>::Metadata)]>)]>,
 }
 
-#[derive(Clone, Copy)]
 pub struct Key<T: ?Sized> {
     pub(crate) loc: Loc,
     pub(crate) meta: <T as Pointee>::Metadata,
 }
+
+impl<T: ?Sized> Clone for Key<T> {
+    fn clone(&self) -> Self {
+        Self {
+            loc: self.loc.clone(),
+            meta: self.meta.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized> Copy for Key<T> {}
 
 impl<T: ?Sized> std::fmt::Debug for Key<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

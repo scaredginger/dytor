@@ -9,6 +9,8 @@ crate-type = ["rlib", "dylib"]
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
+itertools.workspace = true
+serde.workspace = true
 serde-value.workspace = true
 
 rian.workspace = true

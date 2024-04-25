@@ -1,5 +1,5 @@
 [package]
-name = "lib1"
+name = "replay_mock"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,4 +7,5 @@ edition = "2021"
 crate-type = ["rlib", "dylib"]
 
 [dependencies]
+replay.path = "../replay"
 common.path = "../common"

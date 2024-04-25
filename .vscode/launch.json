@@ -1,19 +1,16 @@
 {
   "configurations": [
     {
-      "type": "cppdbg",
+      "type": "lldb",
       "request": "launch",
       "name": "run rian_app",
-      "program": "${workspaceFolder}/target/debug/rian_app",
+      "program": "${workspaceFolder}/target/x86_64-unknown-linux-gnu/debug/app",
       "args": [],
-      "cwd": "${workspaceFolder}/crates/core/rian_app",
+      "cwd": "${workspaceFolder}",
       "sourceFileMap": {},
-      "environment": [
-        {
-          "name": "LD_LIBRARY_PATH",
-          "value": "${workspaceFolder}/target/debug:~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib"
-        }
-      ]
+      "env": {
+        "LD_LIBRARY_PATH": "${workspaceFolder}/target/x86_64-unknown-linux-gnu/target/debug:~/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib",
+      }
     }
   ]
 }

@@ -13,7 +13,7 @@ pub trait Rx<T: Send>: 'static + Send {
 }
 
 pub trait Tx<T: Send>: 'static + Send {
-    fn send(&mut self, value: T) -> WriteResult<T>;
+    fn send(&self, value: T) -> WriteResult<T>;
 }
 
 #[derive(Debug)]

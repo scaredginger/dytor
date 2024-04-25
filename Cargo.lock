@@ -92,7 +92,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "itertools",
  "rian",
+ "serde",
  "serde-value",
 ]
 
@@ -150,7 +152,6 @@ name = "lib1"
 version = "0.1.0"
 dependencies = [
  "common",
- "serde",
 ]
 
 [[package]]
@@ -158,7 +159,6 @@ name = "lib2"
 version = "0.1.0"
 dependencies = [
  "common",
- "serde",
 ]
 
 [[package]]
@@ -317,10 +317,18 @@ name = "replay"
 version = "0.1.0"
 dependencies = [
  "common",
- "itertools",
  "serde",
  "tokio",
  "tokio-stream",
+ "tokio-util",
+]
+
+[[package]]
+name = "replay_mock"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "replay",
 ]
 
 [[package]]
@@ -329,6 +337,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ctor",
+ "itertools",
  "libc",
  "paste",
  "rian_proc_macros",
