@@ -4,7 +4,6 @@ use std::{
 };
 
 use crate::{
-    actor::ActorVTable,
     arena::{Arena, Offset},
     config::ActorConfig,
     context::{
@@ -12,6 +11,7 @@ use crate::{
         MsgTx, SpawnFn,
     },
     lookup::{ActorData, ActorTree, Loc},
+    object::{ObjectConstructor, VTable},
     queue::local::LocalQueue,
     Config, Registry,
 };
@@ -129,8 +129,8 @@ fn create_context_args(config: Config, spawn_fn: SpawnFn) -> Vec<ContextConstruc
 struct ActorConstructorInfo {
     id: ActorId,
     offset: Offset,
-    vtable: &'static ActorVTable,
-    cfg: serde_yaml::Value,
+    vtable: &'static VTable,
+    cfg: serde_value::Value,
 }
 
 struct ContextConstructorArgs {
@@ -209,7 +209,9 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         let cfg = (actor.vtable.deserialize_yaml_value)(actor.cfg).unwrap();
         let offset = actor.offset;
         let buf = arena.at_offset(offset, actor.vtable.layout());
-        unsafe { (actor.vtable.constructor)(init_stage, buf, cfg) }.unwrap();
+        match actor.vtable.constructor {
+            ObjectConstructor::Actor(f) => unsafe { f(init_stage, buf, cfg) }.unwrap(),
+        };
     }
 
     let InitData {

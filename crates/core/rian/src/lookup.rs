@@ -7,16 +7,16 @@ use std::{
 };
 
 use crate::{
-    actor::{ActorVTable, TraitId},
     arena::Offset,
     context::ActorId,
+    object::{TraitId, VTable},
     ContextId, InitArgs, MainArgs, Registry,
 };
 
 #[derive(Clone)]
 pub(crate) struct ActorData {
     pub(crate) id: ActorId,
-    pub(crate) vtable: &'static ActorVTable,
+    pub(crate) vtable: &'static VTable,
     pub(crate) loc: Loc,
 }
 

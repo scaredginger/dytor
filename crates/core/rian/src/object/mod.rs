@@ -1,23 +1,19 @@
 use std::alloc::Layout;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
-use std::mem::{align_of, MaybeUninit};
+use std::mem::align_of;
 use std::ptr::DynMetadata;
 
 use serde::de::{Deserialize, DeserializeOwned};
 
 pub use rian_proc_macros::{uniquely_named, UniquelyNamed};
 
-use crate::context::InitArgs;
+use self::actor::ActorConstructor;
+
+pub(crate) mod actor;
 
 pub trait UniquelyNamed {
     fn name() -> &'static str;
-}
-
-pub trait Actor: Any + Unpin + Sized + UniquelyNamed {
-    type Config: Debug + DeserializeOwned + Send;
-
-    fn init(args: InitArgs<Self>, config: Self::Config) -> anyhow::Result<Self>;
 }
 
 #[derive(Clone, Copy, Hash, PartialOrd, Ord, PartialEq, Eq)]
@@ -30,13 +26,16 @@ impl TraitId {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ActorVTable {
-    pub(crate) deserialize_yaml_value: fn(serde_yaml::Value) -> anyhow::Result<Box<dyn Any + Send>>,
-    pub(crate) constructor: for<'a, 'b> unsafe fn(
-        InitArgs<'a, ()>,
-        dest: &'b mut [u8],
-        config: Box<dyn Any>,
-    ) -> anyhow::Result<()>,
+pub(crate) enum ObjectConstructor {
+    Actor(ActorConstructor),
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(crate) struct VTable {
+    pub(crate) deserialize_yaml_value:
+        fn(serde_value::Value) -> anyhow::Result<Box<dyn Any + Send>>,
+    pub(crate) constructor: ObjectConstructor,
     pub(crate) drop: unsafe fn(*mut u8),
     pub(crate) name: fn() -> &'static str,
     pub(crate) type_id: TypeId,
@@ -44,28 +43,18 @@ pub(crate) struct ActorVTable {
     align: usize,
 }
 
-impl ActorVTable {
+impl VTable {
     pub(crate) fn layout(&self) -> Layout {
         Layout::from_size_align(self.size, self.align).unwrap()
     }
 
-    pub(crate) const fn new<T: Actor>() -> Self {
+    const fn new_impl<T: Any + UniquelyNamed, Config: 'static + Debug + DeserializeOwned + Send>(
+        constructor: ObjectConstructor,
+    ) -> Self {
         Self {
-            deserialize_yaml_value: |d| match T::Config::deserialize(d) {
+            deserialize_yaml_value: |d| match Config::deserialize(d) {
                 Ok(x) => Ok(Box::new(x) as _),
                 Err(e) => anyhow::bail!("Could not deserialize config for {} {e:?}", T::name()),
-            },
-            constructor: |args, dest, config| {
-                assert_eq!(dest.len(), std::mem::size_of::<T>());
-                let config: Box<T::Config> = config.downcast().unwrap();
-                let dest: *mut MaybeUninit<T> = dest.as_mut_ptr().cast();
-                assert_eq!(dest.align_offset(align_of::<T>()), 0);
-
-                let args = unsafe { std::mem::transmute(args) };
-
-                let res = T::init(args, *config)?;
-                unsafe { &mut *dest }.write(res);
-                Ok(())
             },
             drop: |ptr| {
                 assert_eq!(ptr.align_offset(align_of::<T>()), 0);
@@ -74,9 +63,9 @@ impl ActorVTable {
             },
             name: T::name,
             type_id: TypeId::of::<T>(),
-
             size: std::mem::size_of::<T>(),
             align: std::mem::align_of::<T>(),
+            constructor,
         }
     }
 }

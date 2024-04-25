@@ -6,7 +6,7 @@ use common::{
         config::{ActorConfig, Context, Scope},
         ContextId,
     },
-    serde_yaml,
+    serde_value,
     tokio::{self, select, sync::mpsc, task::JoinSet},
 };
 
@@ -31,17 +31,17 @@ fn main() {
                 actors: vec![
                     ActorConfig {
                         typename: "Foo".into(),
-                        config: serde_yaml::Value::String("foo_config".into()),
+                        config: serde_value::Value::String("foo_config".into()),
                         context: ContextId::new(1).unwrap(),
                     },
                     ActorConfig {
                         typename: "Bar".into(),
-                        config: serde_yaml::Value::Null,
+                        config: serde_value::Value::Unit,
                         context: ContextId::new(1).unwrap(),
                     },
                     ActorConfig {
                         typename: "Foo2".into(),
-                        config: serde_yaml::Value::Null,
+                        config: serde_value::Value::Unit,
                         context: ContextId::new(1).unwrap(),
                     },
                 ],

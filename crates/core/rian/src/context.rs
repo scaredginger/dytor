@@ -28,6 +28,7 @@ pub struct ContextId(pub(crate) NonZeroU32);
 
 macro_rules! impl_inner_ops {
     ($struct_name:ident) => {
+        #[allow(unused)]
         impl $struct_name {
             #[must_use]
             pub fn new(x: u32) -> Option<Self> {

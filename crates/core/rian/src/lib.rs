@@ -7,10 +7,10 @@ pub use context::{ContextId, InitArgs, MainArgs};
 
 pub use paste;
 
-mod actor;
 pub mod lookup;
+mod object;
 pub mod queue;
-pub use actor::{uniquely_named, Actor, UniquelyNamed};
+pub use object::{actor::Actor, uniquely_named, UniquelyNamed};
 mod arena;
 pub mod config;
 pub use config::Config;

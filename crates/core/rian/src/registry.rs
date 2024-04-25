@@ -6,19 +6,23 @@ use std::ptr::DynMetadata;
 pub(crate) use __private::InterfaceMetadata;
 use __private::ListNode;
 
-use crate::actor::{Actor, ActorVTable, TraitId};
+use crate::object::actor;
+use crate::{
+    object::{TraitId, VTable},
+    Actor,
+};
 use std::collections::HashMap;
 
 static INIT_FNS: AtomicPtr<ListNode> = AtomicPtr::new(core::ptr::null_mut());
 
 #[derive(Default)]
 pub struct RegistryBuilder {
-    pub(crate) actor_types: HashMap<TypeId, ActorVTable>,
+    pub(crate) actor_types: HashMap<TypeId, VTable>,
     pub(crate) trait_types: HashMap<TraitId, Vec<InterfaceMetadata>>,
 }
 
 pub(crate) struct Registry {
-    pub(crate) actor_types: HashMap<TypeId, ActorVTable>,
+    pub(crate) actor_types: HashMap<TypeId, VTable>,
     pub(crate) trait_types: HashMap<TraitId, Box<[InterfaceMetadata]>>,
     pub(crate) name_to_type_id: HashMap<&'static str, TypeId>,
 }
@@ -58,7 +62,7 @@ impl Registry {
         })
     }
 
-    pub(crate) fn by_name(&self, name: &str) -> Option<(TypeId, &ActorVTable)> {
+    pub(crate) fn by_name(&self, name: &str) -> Option<(TypeId, &VTable)> {
         let type_id = self.name_to_type_id.get(name)?;
         let vtable = self.actor_types.get(type_id)?;
         Some((*type_id, vtable))
@@ -86,7 +90,7 @@ macro_rules! register_actor {
                     ].into_iter()
                 }
 
-                static NODE: ListNode = ListNode::new(|r| init_fn::<$struct>(r, get_metadata()));
+                static NODE: ListNode = ListNode::new(|r| init_actor::<$struct>(r, get_metadata()));
 
                 #[ctor::ctor]
                 fn $struct() {
@@ -97,20 +101,35 @@ macro_rules! register_actor {
     };
 }
 
-fn init_fn<T: Actor>(
-    registry: &mut RegistryBuilder,
-    traits: impl Iterator<Item = (TraitId, InterfaceMetadata)>,
-) -> anyhow::Result<()> {
-    let prev = registry
-        .actor_types
-        .insert(TypeId::of::<T>(), ActorVTable::new::<T>());
-    for (trait_id, meta) in traits {
-        registry.trait_types.entry(trait_id).or_default().push(meta);
-    }
-    if prev.is_some() {
-        anyhow::bail!("Actor {} registered twice", type_name::<T>());
-    }
-    Ok(())
+macro_rules! register_driver {
+    ($struct:ident) => {
+        register_driver!($struct {});
+    };
+    ($struct:ident { $(dyn $trait:ident),* $(,)? }) => {
+        $crate::paste::paste! {
+            #[allow(non_snake_case)]
+            mod [<__declare_driver_ $struct>] {
+                use super::{$struct, $($trait,)*};
+                use std::{sync::atomic::Ordering, collections::HashMap, any::TypeId};
+                use $crate::registry::__private::*;
+
+                fn get_metadata() -> impl Iterator<Item = (TraitId, InterfaceMetadata)> {
+                    [
+                        $(
+                            metadata_helper::<dyn $trait, $struct>(std::ptr::null::<$struct>())
+                        ,)*
+                    ].into_iter()
+                }
+
+                static NODE: ListNode = ListNode::new(|r| init_driver::<$struct>(r, get_metadata()));
+
+                #[ctor::ctor]
+                fn $struct() {
+                    init_node(&NODE);
+                }
+            }
+        }
+    };
 }
 
 // this Any is unimportant; I just need something I'm confident has the
@@ -121,7 +140,7 @@ pub(crate) struct DynMetaPlaceholder(MaybeUninit<DynMetadata<dyn Any>>);
 
 pub mod __private {
     use super::*;
-    pub use crate::actor::TraitId;
+    pub use crate::object::TraitId;
     use crate::Dyn;
     use core::{ptr, sync::atomic::Ordering};
     pub use ctor;
@@ -159,11 +178,22 @@ pub mod __private {
         }
     }
 
-    pub fn init_fn<T: Actor>(
+    pub fn init_actor<T: Actor>(
         registry: &mut RegistryBuilder,
         traits: impl Iterator<Item = (TraitId, InterfaceMetadata)>,
     ) -> anyhow::Result<()> {
-        super::init_fn::<T>(registry, traits)
+        let prev = registry
+            .actor_types
+            .insert(TypeId::of::<T>(), actor::create_vtable::<T>());
+        for (trait_id, meta) in traits {
+            registry.trait_types.entry(trait_id).or_default().push(meta);
+        }
+        anyhow::ensure!(
+            !prev.is_some(),
+            "Actor {} registered twice",
+            type_name::<T>()
+        );
+        Ok(())
     }
 
     pub fn init_node(node: &ListNode) {

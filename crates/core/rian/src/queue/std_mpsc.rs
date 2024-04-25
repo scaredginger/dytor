@@ -1,4 +1,4 @@
-use std::sync::mpsc::{channel, Receiver, RecvError, SendError, Sender, TryRecvError};
+use std::sync::mpsc::{channel, Receiver, SendError, Sender};
 
 use super::{Queue, ReadErr, ReadResult, Rx, Tx, WriteErr, WriteResult};
 

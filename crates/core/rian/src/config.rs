@@ -7,7 +7,7 @@ use crate::context::ContextId;
 #[derive(Deserialize)]
 pub struct ActorConfig {
     pub typename: Arc<str>,
-    pub config: serde_yaml::Value,
+    pub config: serde_value::Value,
     pub context: ContextId,
 }
 

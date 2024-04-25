@@ -1,7 +1,7 @@
 // re-export common libs here so they get linked into a single shared lib
 pub use anyhow;
 pub use rian;
-pub use serde_yaml;
+pub use serde_value;
 pub use tokio;
 
 pub trait CommonTrait: 'static {
