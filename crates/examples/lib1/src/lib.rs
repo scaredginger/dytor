@@ -1,10 +1,8 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use common::anyhow;
-use common::rian::lookup::{AcyclicLocalKey, BroadcastGroup};
-use common::rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
-use common::tokio::time::sleep;
+use common::rian::lookup::BroadcastGroup;
+use common::rian::{register_actor, Actor, InitArgs, MainArgs, UniquelyNamed};
 
 use common::CommonTrait;
 
@@ -26,9 +24,6 @@ impl Actor for Foo2 {
 #[derive(UniquelyNamed)]
 pub struct Foo {
     s: Arc<str>,
-    common_trait_obj: AcyclicLocalKey<dyn CommonTrait>,
-    foo2: AcyclicLocalKey<Foo2>,
-    foo2a: AcyclicLocalKey<Foo2>,
     main_args: Option<MainArgs<'static>>,
 }
 
@@ -42,47 +37,6 @@ impl Actor for Foo {
         args.broadcast(common, |_, t| {
             t.print_self();
         });
-        let mut acc = args.accessor();
-        args.spawn(async move {
-            acc.send(|args, this| this.first_callback(args)).unwrap();
-        });
-        args.spawn(start_loop(args.accessor()));
-        let foo = args.query().into();
-        let foo2 = args.query().into();
-        let foo2a = args.query().into();
-        Ok(Self {
-            s,
-            common_trait_obj: foo,
-            main_args: None,
-            foo2,
-            foo2a,
-        })
-    }
-}
-
-impl Foo {
-    fn first_callback(&mut self, mut args: MainArgs) {
-        let common = self.common_trait_obj.borrow_mut(&mut args);
-        common.print_self();
-
-        /*
-         * Should fail to compile
-        self.foo2.call(&mut args, |args, foo2| {
-            let foo2a = self.foo2a.borrow_mut(args);
-            println!(
-                "Uh oh: {} {}",
-                foo2 as *mut _ as usize, foo2a as *mut _ as usize
-            );
-        });
-        */
-    }
-}
-
-async fn start_loop(mut accessor: Accessor<Foo>) {
-    for _ in 0..5 {
-        sleep(Duration::from_secs(1)).await;
-        accessor
-            .send(|args, this| this.first_callback(args))
-            .unwrap();
+        Ok(Self { s, main_args: None })
     }
 }

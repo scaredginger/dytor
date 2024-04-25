@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{mpsc, Arc},
+};
 
 use common::{
     rian::{
@@ -7,7 +11,6 @@ use common::{
         ContextId,
     },
     serde_value,
-    tokio::{self, select, sync::mpsc, task::JoinSet},
 };
 
 use serde::Deserialize;
@@ -63,34 +66,5 @@ fn main() {
         })
         .collect();
 
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-
-    let (tx, mut rx) = mpsc::unbounded_channel();
-    let spawn_fn = Arc::new(move |fut| tx.send(fut).unwrap());
-    rt.spawn(async move {
-        let mut js = JoinSet::new();
-        loop {
-            if js.is_empty() {
-                let Some(fut) = rx.recv().await else {
-                    break;
-                };
-                js.spawn(fut);
-            }
-            select! {
-                _ = js.join_next() => {}
-                 fut = rx.recv() => {
-                     let Some(fut) = fut else {
-                        break;
-                     };
-                     js.spawn(fut);
-                 }
-            }
-        }
-        while let Some(_) = js.join_next().await {}
-    });
-
-    rian::run(config.rian, spawn_fn);
+    rian::run(config.rian);
 }

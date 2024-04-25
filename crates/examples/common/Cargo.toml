@@ -9,6 +9,5 @@ crate-type = ["rlib", "dylib"]
 [dependencies]
 anyhow.workspace = true
 serde-value.workspace = true
-tokio = { workspace = true, features = ["full"] }
 
 rian.workspace = true

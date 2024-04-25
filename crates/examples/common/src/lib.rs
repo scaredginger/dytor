@@ -2,7 +2,6 @@
 pub use anyhow;
 pub use rian;
 pub use serde_value;
-pub use tokio;
 
 pub trait CommonTrait: 'static {
     fn print_self(&self);

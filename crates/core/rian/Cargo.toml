@@ -12,7 +12,6 @@ ctor.workspace = true
 paste.workspace = true
 serde = { workspace = true, features = ["derive", "rc"] }
 serde-value.workspace = true
-tokio.workspace = true
 
 libc.version = "*"
 

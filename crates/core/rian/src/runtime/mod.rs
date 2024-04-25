@@ -8,7 +8,7 @@ use crate::{
     config::ActorConfig,
     context::{
         ActorId, Context, ContextData, ContextId, ContextLink, InitArgs, InitData, Msg, MsgRx,
-        MsgTx, SpawnFn,
+        MsgTx,
     },
     lookup::{ActorData, ActorTree, Loc},
     object::{ObjectConstructor, VTable},
@@ -18,8 +18,8 @@ use crate::{
 
 mod graph;
 
-pub fn run(config: Config, spawn_fn: SpawnFn) {
-    let args = create_context_args(config, spawn_fn);
+pub fn run(config: Config) {
+    let args = create_context_args(config);
 
     std::thread::scope(|s| {
         let mut args = args.into_iter();
@@ -31,7 +31,7 @@ pub fn run(config: Config, spawn_fn: SpawnFn) {
     });
 }
 
-fn create_context_args(config: Config, spawn_fn: SpawnFn) -> Vec<ContextConstructorArgs> {
+fn create_context_args(config: Config) -> Vec<ContextConstructorArgs> {
     let ns = config.root;
     if !ns.children.is_empty() {
         unimplemented!("Namespaces");
@@ -113,7 +113,6 @@ fn create_context_args(config: Config, spawn_fn: SpawnFn) -> Vec<ContextConstruc
             arena,
             links,
             make_tx: Box::new(move || Box::new(self_tx.clone())),
-            spawn_fn: spawn_fn.clone(),
             tree: None,
         })
     }
@@ -141,7 +140,6 @@ struct ContextConstructorArgs {
     links: Box<[ContextLink]>,
     tree: Option<Arc<ActorTree>>,
     make_tx: Box<dyn 'static + Send + Fn() -> MsgTx>,
-    spawn_fn: SpawnFn,
 }
 
 fn allocate_actors(
@@ -180,7 +178,6 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         links,
         tree,
         make_tx,
-        spawn_fn,
     } = info;
     let data = ContextData {
         id,
@@ -194,7 +191,6 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         tree: tree.unwrap(),
         dependence_relations: Vec::new(),
         make_tx,
-        spawn_fn,
     };
 
     let drop_fns: Vec<_> = actors.iter().map(|a| (a.offset, a.vtable.drop)).collect();
@@ -219,7 +215,6 @@ fn create_context(info: ContextConstructorArgs) -> Context {
         dependence_relations,
         tree: _,
         make_tx: _,
-        spawn_fn: _,
     } = init_data;
 
     if graph::has_cycles(&dependence_relations) {

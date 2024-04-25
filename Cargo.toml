@@ -8,17 +8,13 @@ sanitizer = true
 [workspace.dependencies]
 anyhow = { version = "*", default-features = false }
 ctor = { version = "*", default-features = false }
-futures = { version = "*", default-features = false }
 libloading = { version = "0.8", default-features = false }
 parking_lot = { version = "*", default-features = false }
 paste = { version = "*", default-features = false }
 quote = { version = "*", default-features = false }
 serde = { version = "*", default-features = false }
 serde-value = { version = "0.7", default-features = false }
-serde_yaml = { version = "*", default-features = false }
 syn = { version = "*", default-features = false }
-tokio = { version = "*", default-features = false, features = ["full"] }
 
 rian = { version = "0.1.0", path = "./crates/core/rian" }
-rian_core = { version = "0.1.0", path = "./crates/core/rian_core" }
 rian_proc_macros = { version = "0.1.0", path = "./crates/core/rian_proc_macros" }

@@ -110,15 +110,11 @@ impl ContextLink {
     }
 }
 
-pub(crate) type SpawnFn =
-    Arc<dyn 'static + Sync + Send + Fn(Pin<Box<dyn 'static + Future<Output = ()> + Send>>)>;
-
 pub(crate) struct InitData {
     pub(crate) data: ContextData,
     pub(crate) tree: Arc<ActorTree>,
     pub(crate) dependence_relations: Vec<DependenceRelation>,
     pub(crate) make_tx: Box<dyn 'static + Send + Fn() -> MsgTx>,
-    pub(crate) spawn_fn: SpawnFn,
 }
 
 pub struct InitArgs<'a, ActorT> {
@@ -158,10 +154,6 @@ impl<'a, ActorT> InitArgs<'a, ActorT> {
         <T as Pointee>::Metadata: 'static,
     {
         self.data.broadcast(group, f)
-    }
-
-    pub fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) {
-        (self.data.spawn_fn)(Box::pin(fut))
     }
 }
 

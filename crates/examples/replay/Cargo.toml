@@ -1,10 +1,10 @@
 [package]
-name = "app"
+name = "replay"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libloading.workspace = true
 serde = { workspace = true, features = ["derive", "rc", "std"] }
 
 common.path = "../common"
+tokio = { version = "*", features = ["full"] }
