@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+itertools.workspace = true
 serde = { workspace = true, features = ["derive", "rc", "std"] }
+tokio = { version = "*", features = ["full"] }
+tokio-stream = { version = "*", features = ["full"] }
 
 common.path = "../common"
-tokio = { version = "*", features = ["full"] }

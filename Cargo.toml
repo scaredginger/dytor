@@ -7,7 +7,9 @@ sanitizer = true
 
 [workspace.dependencies]
 anyhow = { version = "*", default-features = false }
+chrono = { version = "*", default-features = false }
 ctor = { version = "*", default-features = false }
+itertools = { version = "*", default-features = false, features = ["use_std"] }
 libloading = { version = "0.8", default-features = false }
 parking_lot = { version = "*", default-features = false }
 paste = { version = "*", default-features = false }

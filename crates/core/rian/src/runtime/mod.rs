@@ -1,5 +1,5 @@
 use std::{
-    mem,
+    iter, mem,
     sync::{mpsc, Arc},
 };
 
@@ -67,6 +67,15 @@ fn create_context_args(config: Config) -> Vec<ContextConstructorArgs> {
             }
         })
         .collect();
+    let make_tx: Vec<_> = contexts
+        .iter()
+        .map(|ctx| {
+            let tx = ctx.tx.clone();
+            Box::new(move || Box::new(tx.clone()) as MsgTx) as _
+        })
+        .collect();
+
+    let make_tx: Arc<[Box<dyn Send + Sync + 'static + Fn() -> MsgTx>]> = Arc::from(make_tx);
     for (i, c) in ns.actors.into_iter().enumerate() {
         let id = ActorId::new(i as u32 + 1).unwrap();
         contexts[c.context.as_index()].actors.push((id, c));
@@ -112,7 +121,7 @@ fn create_context_args(config: Config) -> Vec<ContextConstructorArgs> {
             rx: Box::new(contexts[i].rx.take().unwrap()),
             arena,
             links,
-            make_tx: Box::new(move || Box::new(self_tx.clone())),
+            make_tx: make_tx.clone(),
             tree: None,
         })
     }
@@ -139,7 +148,7 @@ struct ContextConstructorArgs {
     arena: Arena,
     links: Box<[ContextLink]>,
     tree: Option<Arc<ActorTree>>,
-    make_tx: Box<dyn 'static + Send + Fn() -> MsgTx>,
+    make_tx: Arc<[Box<dyn Send + Sync + 'static + Fn() -> MsgTx>]>,
 }
 
 fn allocate_actors(

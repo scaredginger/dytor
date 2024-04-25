@@ -1,5 +1,5 @@
 use std::{
-    any::TypeId,
+    any::{type_name, Any, TypeId},
     collections::HashMap,
     marker::PhantomData,
     ptr::{self, DynMetadata, Pointee},
@@ -10,7 +10,7 @@ use crate::{
     arena::Offset,
     context::ActorId,
     object::{TraitId, VTable},
-    ContextId, InitArgs, MainArgs, Registry,
+    Accessor, ContextId, InitArgs, MainArgs, Registry,
 };
 
 #[derive(Clone)]
@@ -95,11 +95,25 @@ impl<'a, 'b, T: 'static + ?Sized, ActorT> Query<'a, 'b, T, ActorT>
 where
     ActorTree: Lookup<T, <T as Pointee>::Metadata>,
 {
-    pub fn all_keys(&mut self) -> impl '_ + Iterator<Item = (ActorId, Key<T>)> {
+    pub fn all_keys(&mut self) -> impl '_ + Iterator<Item = Key<T>> {
         self.init_args
             .data
             .tree
             .lookup(self.init_args.actor_being_constructed)
+            .map(|(_, b)| b)
+    }
+
+    pub fn all_accessors(&mut self) -> impl '_ + Iterator<Item = Accessor<T>> {
+        self.init_args
+            .data
+            .tree
+            .lookup(self.init_args.actor_being_constructed)
+            .map(|(_, key)| Accessor {
+                offset: key.loc.offset,
+                metadata: key.meta,
+                ctx_queue: (&self.init_args.data.make_tx[key.loc.context_id.as_index()])(),
+                _phantom: PhantomData,
+            })
     }
 
     pub fn broadcast_group(self) -> BroadcastGroup<T> {
@@ -177,6 +191,13 @@ pub struct BroadcastGroup<T: ?Sized> {
 pub struct Key<T: ?Sized> {
     pub(crate) loc: Loc,
     pub(crate) meta: <T as Pointee>::Metadata,
+}
+
+impl<T: ?Sized> std::fmt::Debug for Key<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = type_name::<T>();
+        write!(f, "Key<{name}>")
+    }
 }
 
 #[derive(Clone, Copy)]

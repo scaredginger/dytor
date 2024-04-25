@@ -1,9 +1,7 @@
 use std::{
-    future::Future,
     marker::PhantomData,
     num::NonZeroU32,
     ops::{Deref, DerefMut},
-    pin::Pin,
     ptr::{self, Pointee},
     sync::Arc,
 };
@@ -51,7 +49,7 @@ macro_rules! impl_inner_ops {
 impl_inner_ops!(ActorId);
 impl_inner_ops!(ContextId);
 
-type LocalQueue = crate::queue::local::LocalQueue<Box<dyn Fn(&mut Context)>>;
+type LocalQueue = crate::queue::local::LocalQueue<Box<dyn FnOnce(&mut Context)>>;
 
 pub(crate) struct ContextData {
     pub(crate) id: ContextId,
@@ -114,7 +112,7 @@ pub(crate) struct InitData {
     pub(crate) data: ContextData,
     pub(crate) tree: Arc<ActorTree>,
     pub(crate) dependence_relations: Vec<DependenceRelation>,
-    pub(crate) make_tx: Box<dyn 'static + Send + Fn() -> MsgTx>,
+    pub(crate) make_tx: Arc<[Box<dyn Fn() -> MsgTx + Send + Sync>]>,
 }
 
 pub struct InitArgs<'a, ActorT> {
@@ -146,6 +144,36 @@ impl<'a, ActorT> InitArgs<'a, ActorT> {
         }
     }
 
+    pub fn send_msg<T: ?Sized>(
+        &mut self,
+        Key { loc, meta }: Key<T>,
+        f: impl 'static + Send + FnOnce(&mut MainArgs, &mut T),
+    ) where
+        <T as Pointee>::Metadata: 'static,
+    {
+        let f = Box::new(move |ctx: &mut Context| {
+            let ptr = ctx.arena.offset(loc.offset);
+            let ptr = ptr::from_raw_parts_mut(ptr as *mut (), meta);
+            let mut args = MainArgs {
+                context_data: &mut ctx.data,
+                arena: &ctx.arena,
+            };
+            f(&mut args, unsafe { &mut *ptr })
+        });
+        if self.data.id == loc.context_id {
+            self.data
+                .local_queue
+                .send(f)
+                .unwrap_or_else(|_| panic!("Local queue full"));
+        } else {
+            self.data
+                .link_mut(loc.context_id)
+                .queue
+                .send(f)
+                .unwrap_or_else(|_| panic!("Local queue full"));
+        }
+    }
+
     pub fn broadcast<T: ?Sized>(
         &mut self,
         group: BroadcastGroup<T>,
@@ -161,7 +189,17 @@ impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
     pub fn accessor(&self) -> Accessor<ActorT> {
         Accessor {
             offset: self.actor_offset,
-            ctx_queue: (self.data.make_tx)(),
+            metadata: (),
+            ctx_queue: (&self.data.make_tx[self.data.id.as_index()])(),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn accessor_for_key<T: 'static + ?Sized>(&self, key: Key<T>) -> Accessor<T> {
+        Accessor {
+            offset: key.loc.offset,
+            metadata: key.meta,
+            ctx_queue: (&self.data.make_tx[key.loc.context_id.as_index()])(),
             _phantom: PhantomData,
         }
     }
@@ -216,31 +254,33 @@ impl ContextData {
     }
 }
 
-pub struct Accessor<T: 'static> {
-    offset: Offset,
-    ctx_queue: Box<dyn 'static + Tx<Msg>>,
-    _phantom: PhantomData<T>,
+pub struct Accessor<T: ?Sized> {
+    pub(crate) offset: Offset,
+    pub(crate) metadata: <T as Pointee>::Metadata,
+    pub(crate) ctx_queue: Box<dyn 'static + Tx<Msg>>,
+    pub(crate) _phantom: PhantomData<T>,
 }
 
 /// safety: only _phantom stops it from being send
-unsafe impl<T: 'static> Send for Accessor<T> {}
+unsafe impl<T: ?Sized> Send for Accessor<T> {}
 
-impl<T: 'static> Accessor<T> {
+impl<T: ?Sized + 'static> Accessor<T> {
     pub fn send(
         &mut self,
         f: impl 'static + Send + FnOnce(MainArgs, &mut T) -> (),
     ) -> WriteResult<()> {
         let offset = self.offset;
+        let metadata = self.metadata;
         let queued_fn = Box::new(move |ctx: &mut Context| {
             let ptr = ctx.arena.offset(offset);
-            let ptr = ptr::from_raw_parts_mut(ptr as *mut (), ());
+            let ptr = ptr::from_raw_parts_mut(ptr as *mut (), metadata);
             let ms = MainArgs {
                 context_data: &mut ctx.data,
                 arena: &ctx.arena,
             };
             f(ms, unsafe { &mut *ptr });
         });
-        self.ctx_queue.send(queued_fn).map_err(|e| match e {
+        self.ctx_queue.send(queued_fn).map_err(move |e| match e {
             WriteErr::Finished(_) => WriteErr::Finished(()),
             WriteErr::Full(_) => WriteErr::Full(()),
         })
