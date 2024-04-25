@@ -10,7 +10,7 @@ crate-type = ["rlib"]
 anyhow.workspace = true
 ctor.workspace = true
 paste.workspace = true
-serde = { workspace = true, features = ["derive", "rc"] }
+serde.workspace = true
 serde-value.workspace = true
 
 libc.version = "*"

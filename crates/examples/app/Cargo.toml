@@ -5,6 +5,6 @@ edition = "2021"
 
 [dependencies]
 libloading.workspace = true
-serde = { workspace = true, features = ["derive", "rc", "std"] }
+serde.workspace = true
 
 common.path = "../common"

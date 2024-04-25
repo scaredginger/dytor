@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 itertools.workspace = true
-serde = { workspace = true, features = ["derive", "rc", "std"] }
+serde.workspace = true
 tokio = { version = "*", features = ["full"] }
 tokio-stream = { version = "*", features = ["full"] }
 

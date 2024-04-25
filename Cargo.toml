@@ -14,7 +14,11 @@ libloading = { version = "0.8", default-features = false }
 parking_lot = { version = "*", default-features = false }
 paste = { version = "*", default-features = false }
 quote = { version = "*", default-features = false }
-serde = { version = "*", default-features = false }
+serde = { version = "*", default-features = false, features = [
+    "derive",
+    "rc",
+    "std",
+] }
 serde-value = { version = "0.7", default-features = false }
 syn = { version = "*", default-features = false }
 
