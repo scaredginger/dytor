@@ -2,6 +2,7 @@ use std::{
     any::{type_name, Any, TypeId},
     collections::HashMap,
     marker::PhantomData,
+    mem,
     ptr::{self, DynMetadata, Pointee},
     sync::Arc,
 };
@@ -120,11 +121,15 @@ where
             .data
             .tree
             .lookup(self.init_args.actor_being_constructed)
-            .map(|(_, key)| Accessor {
-                offset: key.loc.offset,
-                metadata: key.meta,
-                ctx_queue: (&self.init_args.data.make_tx[key.loc.context_id.as_index()])(),
-                _phantom: PhantomData,
+            .map(|(_, key)| {
+                mem::forget(self.init_args.control_block_ptr.clone());
+                Accessor {
+                    offset: key.loc.offset,
+                    metadata: key.meta,
+                    ctx_queue: (&self.init_args.data.make_tx[key.loc.context_id.as_index()])(),
+                    control_block_ptr: self.init_args.control_block_ptr.0,
+                    _phantom: PhantomData,
+                }
             })
     }
 

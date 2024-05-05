@@ -36,8 +36,6 @@ pub(crate) struct VTable {
     pub(crate) deserialize_yaml_value:
         fn(serde_value::Value) -> anyhow::Result<Box<dyn Any + Send>>,
     pub(crate) constructor: ObjectConstructor,
-    pub(crate) is_finished: unsafe fn(*const u8) -> bool,
-    pub(crate) stop: unsafe fn(*mut u8),
     pub(crate) drop: unsafe fn(*mut u8),
     pub(crate) name: fn() -> &'static str,
     pub(crate) type_id: TypeId,
@@ -52,8 +50,6 @@ impl VTable {
 
     const fn new_impl<T: Any + UniquelyNamed, Config: 'static + Debug + DeserializeOwned + Send>(
         constructor: ObjectConstructor,
-        is_finished: unsafe fn(*const u8) -> bool,
-        stop: unsafe fn(*mut u8),
     ) -> Self {
         Self {
             deserialize_yaml_value: |d| match Config::deserialize(d) {
@@ -70,8 +66,6 @@ impl VTable {
             size: std::mem::size_of::<T>(),
             align: std::mem::align_of::<T>(),
             constructor,
-            is_finished,
-            stop,
         }
     }
 }

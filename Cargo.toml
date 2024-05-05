@@ -2,8 +2,12 @@
 members = ["./crates/examples/*", "./crates/core/*"]
 resolver = "2"
 
+[profile.release]
+panic = "abort"
+
 [profile.dev]
 sanitizer = true
+panic = "unwind"
 
 [workspace.dependencies]
 anyhow = { version = "*", default-features = false }

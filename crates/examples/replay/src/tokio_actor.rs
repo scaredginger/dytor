@@ -1,19 +1,19 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::thread;
+use std::time::Duration;
+use tokio::signal::unix::{signal, SignalKind};
 
 use common::anyhow;
 use common::rian::{register_actor, Actor, InitArgs, UniquelyNamed};
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::LocalSet;
-use tokio_util::sync::CancellationToken;
 
 #[derive(UniquelyNamed)]
 pub struct TokioSingleThread {
     thread: Option<thread::JoinHandle<()>>,
     task_tx: mpsc::UnboundedSender<LazyDynFut>,
-    token: CancellationToken,
 }
 
 register_actor!(TokioSingleThread);
@@ -21,26 +21,17 @@ register_actor!(TokioSingleThread);
 impl Actor for TokioSingleThread {
     type Config = ();
 
-    fn init(_args: InitArgs<Self>, _cfg: ()) -> anyhow::Result<Self> {
+    fn init(args: InitArgs<Self>, _cfg: ()) -> anyhow::Result<Self> {
         let (task_tx, task_rx) = mpsc::unbounded_channel();
-        let token = CancellationToken::new();
-        let token2 = token.clone();
-        let thread = thread::spawn(move || run_async_event_loop(task_rx, token2));
+        let acc = args.accessor();
+        let thread = thread::spawn(move || {
+            run_async_event_loop(task_rx);
+            drop(acc);
+        });
         Ok(Self {
             thread: Some(thread),
             task_tx,
-            token,
         })
-    }
-
-    fn is_finished(&self) -> bool {
-        true
-    }
-
-    fn stop(&mut self) {
-        self.token.cancel();
-        let thread = self.thread.take().unwrap();
-        thread.join().unwrap();
     }
 }
 
@@ -59,16 +50,13 @@ impl TokioSingleThread {
 
 impl Drop for TokioSingleThread {
     fn drop(&mut self) {
-        assert!(self.thread.is_none());
+        self.thread.take().unwrap().join().unwrap();
     }
 }
 
 pub type LazyDynFut = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()>>> + Send + 'static>;
 
-fn run_async_event_loop(
-    mut task_rx: mpsc::UnboundedReceiver<LazyDynFut>,
-    token: CancellationToken,
-) {
+fn run_async_event_loop(mut task_rx: mpsc::UnboundedReceiver<LazyDynFut>) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .thread_name("TokioRuntimeWorker")
@@ -77,17 +65,19 @@ fn run_async_event_loop(
 
     let local = LocalSet::new();
     local.spawn_local(async move {
+        // let mut signal = signal(SignalKind::interrupt()).unwrap();
         loop {
             select! {
                 biased;
-
-                _ = token.cancelled() => break,
 
                 f = task_rx.recv() => {
                     match f {
                         Some(f) => tokio::task::spawn_local(f()),
                         None => break,
                     };
+                }
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                    break;
                 }
             }
         }

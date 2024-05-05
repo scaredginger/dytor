@@ -62,11 +62,9 @@ fn main() {
 
     for p in &config.shared_lib_paths {
         let s = p.as_os_str();
-        let lib= unsafe { libloading::Library::new(s) }.unwrap();
+        let lib = unsafe { libloading::Library::new(s) }.unwrap();
         mem::forget(lib);
     }
 
     rian::run(config.rian);
-    
 }
-

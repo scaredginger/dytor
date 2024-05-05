@@ -1,9 +1,14 @@
 use std::{
+    alloc::Layout,
     marker::PhantomData,
+    mem::{self, MaybeUninit},
     num::NonZeroU32,
     ops::{Deref, DerefMut},
-    ptr::{self, Pointee},
-    sync::Arc,
+    ptr::{self, NonNull, Pointee},
+    sync::{
+        atomic::{fence, AtomicU32, Ordering},
+        Arc,
+    },
 };
 
 use serde::Deserialize;
@@ -11,7 +16,7 @@ use serde::Deserialize;
 use crate::{
     arena::{Arena, Offset},
     lookup::{ActorTree, BroadcastGroup, DependenceRelation, Key, Query},
-    queue::{Rx, Tx, WriteErr, WriteResult},
+    queue::remote,
 };
 
 type PhantomUnsend = PhantomData<*mut ()>;
@@ -54,14 +59,16 @@ type LocalQueue = crate::queue::local::LocalQueue<Box<dyn FnOnce(&mut Context)>>
 pub(crate) struct ContextData {
     pub(crate) id: ContextId,
     pub(crate) local_queue: LocalQueue,
-    pub(crate) links: Box<[ContextLink]>,
-    pub(crate) rx: MsgRx,
+    pub(crate) unsent_messages: Vec<(ContextId, Msg)>,
 }
 
+// TODO: move this to runtime module
 pub struct Context {
     pub(crate) data: ContextData,
     pub(crate) arena: Arena,
     pub(crate) drop_fns: Vec<(Offset, unsafe fn(*mut u8))>,
+    pub(crate) rx: MsgRx,
+    pub(crate) links: Box<[ContextLink]>,
     pub(crate) _unsend_marker: PhantomUnsend,
 }
 
@@ -74,38 +81,18 @@ impl Drop for Context {
     }
 }
 
-pub(crate) type Msg = Box<dyn 'static + Send + FnOnce(&mut Context)>;
-pub(crate) type MsgRx = Box<dyn Rx<Msg>>;
-pub(crate) type MsgTx = Box<dyn Tx<Msg>>;
-
-impl ContextData {
-    fn link_mut(&mut self, other: ContextId) -> &mut ContextLink {
-        &mut self.links[other.as_index() - (self.id > other) as usize]
-    }
+pub enum QueueItem {
+    Msg(Msg),
+    AccessorDropped,
+    Stop,
 }
+
+pub(crate) type Msg = Box<dyn 'static + Send + FnOnce(&mut Context)>;
+pub(crate) type MsgRx = remote::Rx<QueueItem>;
+pub(crate) type MsgTx = remote::Tx<QueueItem>;
 
 pub(crate) struct ContextLink {
     pub(crate) queue: MsgTx,
-}
-
-impl ContextLink {
-    pub(crate) fn send_msg<T: ?Sized>(
-        &mut self,
-        key: Key<T>,
-        f: impl 'static + Send + FnOnce(&mut T),
-    ) -> Result<(), ()>
-    where
-        <T as Pointee>::Metadata: 'static,
-    {
-        let offset = key.loc.offset;
-        let meta = key.meta;
-        let queued_fn = Box::new(move |ctx: &mut Context| {
-            let ptr = ctx.arena.offset(offset);
-            let ptr = ptr::from_raw_parts_mut(ptr as *mut (), meta);
-            f(unsafe { &mut *ptr })
-        });
-        self.queue.send(queued_fn).map_err(|_| ())
-    }
 }
 
 pub(crate) struct InitData {
@@ -119,6 +106,7 @@ pub struct InitArgs<'a, ActorT> {
     pub(crate) data: &'a mut InitData,
     pub(crate) actor_being_constructed: ActorId,
     pub(crate) actor_offset: Offset,
+    pub(crate) control_block_ptr: &'a ControlBlockPtr,
     pub(crate) _phantom: PhantomData<ActorT>,
 }
 
@@ -158,19 +146,12 @@ impl<'a, ActorT> InitArgs<'a, ActorT> {
                 context_data: &mut ctx.data,
                 arena: &ctx.arena,
             };
-            f(&mut args, unsafe { &mut *ptr })
+            f(&mut args, unsafe { &mut *ptr });
         });
         if self.data.id == loc.context_id {
-            self.data
-                .local_queue
-                .send(f)
-                .unwrap_or_else(|_| panic!("Local queue full"));
+            self.data.local_queue.send(f)
         } else {
-            self.data
-                .link_mut(loc.context_id)
-                .queue
-                .send(f)
-                .unwrap_or_else(|_| panic!("Local queue full"));
+            self.data.unsent_messages.push((loc.context_id, f));
         }
     }
 
@@ -187,19 +168,23 @@ impl<'a, ActorT> InitArgs<'a, ActorT> {
 
 impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
     pub fn accessor(&self) -> Accessor<ActorT> {
+        mem::forget(self.control_block_ptr.clone());
         Accessor {
             offset: self.actor_offset,
             metadata: (),
             ctx_queue: (&self.data.make_tx[self.data.id.as_index()])(),
+            control_block_ptr: self.control_block_ptr.0,
             _phantom: PhantomData,
         }
     }
 
     pub fn accessor_for_key<T: 'static + ?Sized>(&self, key: Key<T>) -> Accessor<T> {
+        mem::forget(self.control_block_ptr.clone());
         Accessor {
             offset: key.loc.offset,
             metadata: key.meta,
             ctx_queue: (&self.data.make_tx[key.loc.context_id.as_index()])(),
+            control_block_ptr: self.control_block_ptr.0,
             _phantom: PhantomData,
         }
     }
@@ -225,19 +210,12 @@ impl<'a> MainArgs<'a> {
                 context_data: &mut ctx.data,
                 arena: &ctx.arena,
             };
-            f(&mut args, unsafe { &mut *ptr })
+            f(&mut args, unsafe { &mut *ptr });
         });
         if self.context_data.id == loc.context_id {
-            self.context_data
-                .local_queue
-                .send(f)
-                .unwrap_or_else(|_| panic!("Local queue full"));
+            self.context_data.local_queue.send(f)
         } else {
-            self.context_data
-                .link_mut(loc.context_id)
-                .queue
-                .send(f)
-                .unwrap_or_else(|_| panic!("Local queue full"));
+            self.context_data.unsent_messages.push((loc.context_id, f));
         }
     }
 
@@ -249,10 +227,6 @@ impl<'a> MainArgs<'a> {
         <T as Pointee>::Metadata: 'static,
     {
         self.context_data.broadcast(group, f)
-    }
-
-    pub fn notify_completion(&mut self) {
-        // todo!();
     }
 }
 
@@ -269,61 +243,128 @@ impl ContextData {
                 let refs = refs.clone();
                 let f = f.clone();
                 self.local_queue.send(Box::new(move |ctx: &mut Context| {
+                    let mut ms = MainArgs {
+                        context_data: &mut ctx.data,
+                        arena: &ctx.arena,
+                    };
                     for (offset, meta) in refs.as_ref() {
                         let ptr =
                             ptr::from_raw_parts_mut(ctx.arena.offset(*offset) as *mut (), *meta);
-                        let mut ms = MainArgs {
-                            context_data: &mut ctx.data,
-                            arena: &ctx.arena,
-                        };
                         f(&mut ms, unsafe { &mut *ptr });
                     }
                 }));
             } else {
                 let refs = refs.clone();
                 let f = f.clone();
-                self.link_mut(*id).queue.send(Box::new(move |ctx| {
+                let msg = Box::new(move |ctx: &mut Context| {
+                    let mut ms = MainArgs {
+                        context_data: &mut ctx.data,
+                        arena: &ctx.arena,
+                    };
                     for (offset, meta) in refs.as_ref() {
                         let ptr = ctx.arena.offset(*offset);
                         let ptr = ptr::from_raw_parts_mut(ptr as *mut (), *meta);
-                        let mut ms = MainArgs {
-                            context_data: &mut ctx.data,
-                            arena: &ctx.arena,
-                        };
                         f(&mut ms, unsafe { &mut *ptr });
                     }
-                }));
+                });
+                self.unsent_messages.push((*id, msg));
             }
         }
+    }
+}
+
+pub(crate) struct ControlBlock {
+    pub(crate) unhandled_events: AtomicU32,
+}
+
+pub(crate) struct ControlBlockPtr(pub(crate) NonNull<ControlBlock>);
+
+unsafe impl Send for ControlBlockPtr {}
+
+impl ControlBlockPtr {
+    pub(crate) fn new() -> Self {
+        let block = ControlBlock {
+            unhandled_events: AtomicU32::new(1),
+        };
+        let layout = Layout::for_value(&block);
+        let ptr = unsafe { std::alloc::alloc(layout) } as *mut MaybeUninit<ControlBlock>;
+        let cb = unsafe { ptr.as_mut() }.unwrap();
+        cb.write(block);
+        let ptr = NonNull::new(ptr as _).unwrap();
+        Self(ptr)
+    }
+
+    pub(crate) fn release(self) -> bool {
+        let ptr = self.0.as_ptr();
+        let block = unsafe { &*ptr };
+        std::mem::forget(self);
+        if block.unhandled_events.fetch_sub(1, Ordering::Release) > 1 {
+            return false;
+        }
+
+        fence(Ordering::Acquire);
+        let layout = Layout::for_value(&block);
+        unsafe { std::alloc::dealloc(ptr as *mut _, layout) };
+        true
+    }
+
+    pub(crate) fn into_unowned(self) -> NonNull<ControlBlock> {
+        let res = self.0;
+        self.release();
+        res
+    }
+}
+
+impl Clone for ControlBlockPtr {
+    fn clone(&self) -> Self {
+        let block = unsafe { self.0.as_ref() };
+        block.unhandled_events.fetch_add(1, Ordering::Relaxed);
+        Self(self.0)
+    }
+}
+
+impl Drop for ControlBlockPtr {
+    #[inline(always)]
+    fn drop(&mut self) {
+        unreachable!(
+            "A control block ptr should never be dropped. Destroy it with one of the methods."
+        );
     }
 }
 
 pub struct Accessor<T: ?Sized> {
     pub(crate) offset: Offset,
     pub(crate) metadata: <T as Pointee>::Metadata,
-    pub(crate) ctx_queue: Box<dyn 'static + Tx<Msg>>,
+    pub(crate) ctx_queue: remote::Tx<QueueItem>,
+    pub(crate) control_block_ptr: NonNull<ControlBlock>,
     pub(crate) _phantom: PhantomData<T>,
+}
+
+impl<T: ?Sized> Drop for Accessor<T> {
+    fn drop(&mut self) {
+        self.ctx_queue.send(QueueItem::AccessorDropped).unwrap();
+    }
 }
 
 /// safety: only _phantom stops it from being send
 unsafe impl<T: ?Sized> Send for Accessor<T> {}
 
 impl<T: ?Sized + 'static> Accessor<T> {
-    pub fn send(&self, f: impl 'static + Send + FnOnce(MainArgs, &mut T) -> ()) -> WriteResult<()> {
+    pub fn send(&self, f: impl 'static + Send + FnOnce(&mut MainArgs, &mut T) -> ()) {
         let offset = self.offset;
         let metadata = self.metadata;
         let queued_fn = Box::new(move |ctx: &mut Context| {
             let ptr = ctx.arena.offset(offset);
             let ptr = ptr::from_raw_parts_mut(ptr as *mut (), metadata);
-            let ms = MainArgs {
+            let mut ms = MainArgs {
                 context_data: &mut ctx.data,
                 arena: &ctx.arena,
             };
-            f(ms, unsafe { &mut *ptr });
+            f(&mut ms, unsafe { &mut *ptr });
         });
-        self.ctx_queue.send(queued_fn).map_err(move |e| match e {
-            WriteErr::Finished(_) => WriteErr::Finished(()),
-            WriteErr::Full(_) => WriteErr::Full(()),
-        })
+        unsafe { self.control_block_ptr.as_ref() }
+            .unhandled_events
+            .fetch_add(1, Ordering::Relaxed);
+        self.ctx_queue.send(QueueItem::Msg(queued_fn)).unwrap()
     }
 }

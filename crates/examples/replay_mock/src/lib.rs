@@ -8,9 +8,9 @@ use replay::tokio_stream::wrappers::ReceiverStream;
 use replay::{tokio, tokio_stream, TokioSingleThread};
 use common::anyhow;
 use common::chrono::{DateTime, TimeZone, Utc};
+use common::itertools::Itertools;
 use common::rian::lookup::{BroadcastGroup, Key};
 use common::rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
-use common::itertools::Itertools;
 
 #[derive(UniquelyNamed)]
 pub struct IntervalUnitProducer {
@@ -36,12 +36,6 @@ impl Actor for IntervalUnitConsumer {
     fn init(args: InitArgs<Self>, config: ()) -> anyhow::Result<Self> {
         Ok(Self {})
     }
-
-    fn is_finished(&self) -> bool {
-        true
-    }
-
-    fn stop(&mut self) {}
 }
 
 register_actor!(IntervalUnitProducer {
@@ -67,12 +61,6 @@ impl Actor for IntervalUnitProducer {
             tokio,
         })
     }
-
-    fn is_finished(&self) -> bool {
-        true
-    }
-
-    fn stop(&mut self) {}
 }
 
 impl TypedProducer for IntervalUnitProducer {
@@ -80,7 +68,7 @@ impl TypedProducer for IntervalUnitProducer {
 
     fn event_stream(
         &mut self,
-        mut args: MainArgs,
+        args: &mut MainArgs,
     ) -> impl Stream<Item = Event<Self::Item>> + Send + 'static {
         let (tx, rx) = mpsc::channel(2);
         let mut times = self.times.clone();
@@ -93,14 +81,14 @@ impl TypedProducer for IntervalUnitProducer {
                         obj: (),
                     };
                     tx.send(ev).await.unwrap();
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    tokio::time::sleep(Duration::from_millis(50)).await;
                 }
             });
         });
         ReceiverStream::from(rx)
     }
 
-    fn process_event(&mut self, mut args: MainArgs, item: Event<Self::Item>) {
+    fn process_event(&mut self, args: &mut MainArgs, item: Event<Self::Item>) {
         args.broadcast(&self.consumers, move |args, c| {
             c.recv_event(&item);
         });

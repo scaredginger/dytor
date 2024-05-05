@@ -5,9 +5,9 @@ use std::pin::Pin;
 
 use common::anyhow::{anyhow, Result};
 use common::chrono::{DateTime, Utc};
+use common::itertools::Itertools as _;
 use common::rian::lookup::Key;
 use common::rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
-use common::itertools::Itertools as _;
 use tokio::sync::oneshot;
 pub use tokio_stream::{Stream, StreamExt};
 
@@ -37,18 +37,11 @@ impl Actor for Synchronizer {
             .exactly_one()
             .map_err(|_| anyhow!("Multiple tokio runtimes"))?;
         let sources = args.query().all_accessors().collect();
-        let this = args.accessor();
         args.send_msg(key, move |_, obj| {
-            obj.spawn_with(move || background_task(this, sources))
+            obj.spawn_with(move || background_task(sources))
         });
         Ok(Self { completed: false })
     }
-
-    fn is_finished(&self) -> bool {
-        self.completed
-    }
-
-    fn stop(&mut self) {}
 }
 
 mod private {
@@ -62,13 +55,13 @@ pub trait TypedProducer {
 
     fn event_stream(
         &mut self,
-        args: MainArgs,
+        args: &mut MainArgs,
     ) -> impl Stream<Item = Event<Self::Item>> + Send + 'static;
-    fn process_event(&mut self, args: MainArgs, item: Event<Self::Item>);
+    fn process_event(&mut self, args: &mut MainArgs, item: Event<Self::Item>);
 }
 
 impl<T: TypedProducer> Producer for T {
-    fn create_stream(&mut self, args: MainArgs) -> DynStream {
+    fn create_stream(&mut self, args: &mut MainArgs) -> DynStream {
         Box::pin(TypedProducer::event_stream(self, args).map(
             |Event {
                  timestamp,
@@ -86,7 +79,7 @@ impl<T: TypedProducer> Producer for T {
 
     fn process_event(
         &mut self,
-        args: MainArgs,
+        args: &mut MainArgs,
         Event {
             timestamp,
             tie_break,
@@ -105,8 +98,8 @@ impl<T: TypedProducer> Producer for T {
 type DynStream = Pin<Box<dyn Send + Stream<Item = Event<Box<dyn Any + Send>>>>>;
 
 pub trait Producer: private::Sealed {
-    fn create_stream(&mut self, args: MainArgs) -> DynStream;
-    fn process_event(&mut self, args: MainArgs, item: Event<Box<dyn Any>>);
+    fn create_stream(&mut self, args: &mut MainArgs) -> DynStream;
+    fn process_event(&mut self, args: &mut MainArgs, item: Event<Box<dyn Any>>);
 }
 
 struct HeapEntry {
@@ -141,21 +134,17 @@ impl Ord for HeapEntry {
     }
 }
 
-async fn background_task(
-    synchronizer: Accessor<Synchronizer>,
-    producers: Vec<Accessor<dyn Producer>>,
-) {
+async fn background_task(producers: Vec<Accessor<dyn Producer>>) {
     let mut heap = BinaryHeap::with_capacity(producers.len());
 
     let futures: Vec<_> = producers
         .into_iter()
-        .map(|mut acc| {
+        .map(|acc| {
             let (tx, rx) = oneshot::channel();
             acc.send(|args, p| {
                 tx.send(p.create_stream(args))
                     .unwrap_or_else(|_| panic!("Could not send"))
-            })
-            .unwrap();
+            });
             (acc, rx)
         })
         .collect();
@@ -181,7 +170,7 @@ async fn background_task(
 
     while let Some(HeapEntry {
         next_event,
-        mut acc,
+        acc,
         mut stream,
     }) = heap.pop()
     {
@@ -199,8 +188,7 @@ async fn background_task(
                     obj: obj as _,
                 },
             )
-        })
-        .unwrap();
+        });
 
         let ev = stream.next().await;
         if let Some(ev) = ev {
@@ -211,9 +199,4 @@ async fn background_task(
             });
         }
     }
-
-    synchronizer.send(|mut args, s| {
-        s.completed = true;
-        args.notify_completion();
-    });
 }

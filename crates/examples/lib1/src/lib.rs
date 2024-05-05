@@ -19,12 +19,6 @@ impl Actor for Foo2 {
     fn init(args: InitArgs<Self>, config: Self::Config) -> anyhow::Result<Self> {
         Ok(Self { a: 0 })
     }
-
-    fn is_finished(&self) -> bool {
-        true
-    }
-
-    fn stop(&mut self) {}
 }
 
 #[derive(UniquelyNamed)]
@@ -45,10 +39,4 @@ impl Actor for Foo {
         });
         Ok(Self { s, main_args: None })
     }
-
-    fn is_finished(&self) -> bool {
-        true
-    }
-
-    fn stop(&mut self) {}
 }
