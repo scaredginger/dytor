@@ -10,7 +10,7 @@ pub use paste;
 pub mod lookup;
 mod object;
 pub mod queue;
-pub use object::{actor::Actor, uniquely_named, UniquelyNamed};
+pub use object::{actor::Actor, UniquelyNamed};
 mod arena;
 pub mod config;
 pub use config::Config;

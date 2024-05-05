@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, ItemTrait};
+use syn::{parse_macro_input, DeriveInput};
 
 #[proc_macro_derive(UniquelyNamed)]
 pub fn uniquely_named_derive(input: TokenStream) -> TokenStream {
@@ -13,21 +13,5 @@ pub fn uniquely_named_derive(input: TokenStream) -> TokenStream {
             }
         }
     };
-    TokenStream::from(expanded)
-}
-
-#[proc_macro_attribute]
-pub fn uniquely_named(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as ItemTrait);
-    let name = &input.ident;
-    let expanded = quote! {
-        #input
-        impl UniquelyNamed for dyn #name {
-            fn name() -> &'static str {
-                stringify!(#name)
-            }
-        }
-    };
-
     TokenStream::from(expanded)
 }

@@ -6,7 +6,7 @@ use std::ptr::DynMetadata;
 
 use serde::de::DeserializeOwned;
 
-pub use rian_proc_macros::{uniquely_named, UniquelyNamed};
+pub use rian_proc_macros::UniquelyNamed;
 
 use self::actor::ActorConstructor;
 
