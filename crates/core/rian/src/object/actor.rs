@@ -6,11 +6,11 @@ use std::{
 
 use serde::de::DeserializeOwned;
 
-use crate::{context, InitArgs, UniquelyNamed};
+use crate::{context, registry::ActorRegistered, InitArgs, UniquelyNamed};
 
 use super::{ObjectConstructor, VTable};
 
-pub trait Actor: Any + Unpin + Sized + UniquelyNamed {
+pub trait Actor: Any + Unpin + Sized + UniquelyNamed + ActorRegistered {
     type Config: Debug + DeserializeOwned + Send;
 
     fn init(args: InitArgs<Self>, config: Self::Config) -> anyhow::Result<Self>;

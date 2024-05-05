@@ -3,6 +3,7 @@ use std::any::{type_name, Any, TypeId};
 use std::mem::MaybeUninit;
 use std::ptr::DynMetadata;
 
+pub(crate) use __private::ActorRegistered;
 pub(crate) use __private::InterfaceMetadata;
 use __private::ListNode;
 
@@ -96,6 +97,8 @@ macro_rules! register_actor {
                 fn $struct() {
                     init_node(&NODE);
                 }
+
+                impl ActorRegistered for $struct {}
             }
         }
     };
@@ -114,6 +117,13 @@ pub mod __private {
     use core::{ptr, sync::atomic::Ordering};
     pub use ctor;
     pub use libc;
+
+    #[diagnostic::on_unimplemented(
+        message = "The runtime will not recognise {Self} as an actor.",
+        label = "`{Self}` has not been registered as an actor.",
+        note = "Adding `register_actor!({Self});` will fix this error."
+    )]
+    pub trait ActorRegistered {}
 
     pub fn metadata_helper<D: ?Sized + Dyn, S: 'static>(
         ptr: *const D,
