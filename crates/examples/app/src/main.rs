@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem, path::Path, sync::Arc};
+use std::{collections::HashMap, ffi::CString};
 
 use common::{
     rian::{
@@ -15,7 +15,7 @@ use serde_value::Value as SerdeValue;
 #[derive(Deserialize)]
 struct Config {
     rian: rian::Config,
-    shared_lib_paths: Vec<Arc<Path>>,
+    shared_lib_paths: Vec<CString>,
 }
 
 fn main() {
@@ -53,17 +53,31 @@ fn main() {
                 imported_scopes: vec![],
             },
         },
-        shared_lib_paths: vec![Path::new(
+        shared_lib_paths: vec![CString::new(
             "target/x86_64-unknown-linux-gnu/debug/libreplay_mock.so",
         )
-        .into()],
+        .unwrap()],
     };
 
-    for p in &config.shared_lib_paths {
-        let s = p.as_os_str();
-        let lib = unsafe { libloading::Library::new(s) }.unwrap();
-        mem::forget(lib);
-    }
+    let libs: Vec<_> = config
+        .shared_lib_paths
+        .iter()
+        .map(|filename| {
+            let name = filename.as_ptr();
+            unsafe {
+                libc::dlopen(
+                    name,
+                    libc::RTLD_LOCAL | libc::RTLD_NODELETE | libc::RTLD_LAZY,
+                )
+            }
+        })
+        .collect();
 
     rian::run(config.rian);
+
+    for lib in libs {
+        unsafe {
+            libc::dlclose(lib);
+        }
+    }
 }
