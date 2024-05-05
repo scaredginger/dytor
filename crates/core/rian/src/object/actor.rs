@@ -6,7 +6,7 @@ use std::{
 
 use serde::de::DeserializeOwned;
 
-use crate::{InitArgs, UniquelyNamed};
+use crate::{context, InitArgs, UniquelyNamed};
 
 use super::{ObjectConstructor, VTable};
 
@@ -29,7 +29,9 @@ pub(crate) fn create_vtable<T: Actor>() -> VTable {
         let dest: *mut MaybeUninit<T> = dest.as_mut_ptr().cast();
         assert_eq!(dest.align_offset(align_of::<T>()), 0);
 
-        let args = unsafe { std::mem::transmute(args) };
+        let args = unsafe {
+            std::mem::transmute::<context::InitArgs<'_, ()>, context::InitArgs<'_, T>>(args)
+        };
 
         let res = T::init(args, *config)?;
         unsafe { &mut *dest }.write(res);

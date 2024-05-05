@@ -43,8 +43,8 @@ fn dfs(node: ActorId, graph: &HashMap<ActorId, Node>) -> bool {
     use State as S;
     let node = graph.get(&node).unwrap();
     match node.state.get() {
-        S::Visiting => return true,
-        S::Visited => return false,
+        S::Visiting => true,
+        S::Visited => false,
         S::Unvisited => {
             node.state.set(S::Visiting);
             for child in &node.children {

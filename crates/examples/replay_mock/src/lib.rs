@@ -1,16 +1,14 @@
-use std::sync::Arc;
 use std::time::Duration;
 
-use replay::synchronizer::{Event, Producer, Stream, Synchronizer, TypedProducer};
+use replay::synchronizer::{Event, Producer, Stream, TypedProducer};
 
 use replay::tokio::sync::mpsc;
 use replay::tokio_stream::wrappers::ReceiverStream;
-use replay::{tokio, tokio_stream, TokioSingleThread};
+use replay::{tokio, TokioSingleThread};
 use common::anyhow;
-use common::chrono::{DateTime, TimeZone, Utc};
-use common::itertools::Itertools;
+use common::chrono::{DateTime, Utc};
 use common::rian::lookup::{BroadcastGroup, Key};
-use common::rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
+use common::rian::{register_actor, Actor, InitArgs, MainArgs, UniquelyNamed};
 
 #[derive(UniquelyNamed)]
 pub struct IntervalUnitProducer {
@@ -33,7 +31,7 @@ register_actor!(IntervalUnitConsumer);
 impl Actor for IntervalUnitConsumer {
     type Config = ();
 
-    fn init(args: InitArgs<Self>, config: ()) -> anyhow::Result<Self> {
+    fn init(_args: InitArgs<Self>, _config: ()) -> anyhow::Result<Self> {
         Ok(Self {})
     }
 }
@@ -45,7 +43,7 @@ register_actor!(IntervalUnitProducer {
 impl Actor for IntervalUnitProducer {
     type Config = ();
 
-    fn init(mut args: InitArgs<Self>, config: ()) -> anyhow::Result<Self> {
+    fn init(mut args: InitArgs<Self>, _config: ()) -> anyhow::Result<Self> {
         let mut times = Vec::new();
         for i in 1..=10i64 {
             times.push(DateTime::from_timestamp_nanos(i * 1_000_000_000));
@@ -89,7 +87,7 @@ impl TypedProducer for IntervalUnitProducer {
     }
 
     fn process_event(&mut self, args: &mut MainArgs, item: Event<Self::Item>) {
-        args.broadcast(&self.consumers, move |args, c| {
+        args.broadcast(&self.consumers, move |_, c| {
             c.recv_event(&item);
         });
     }

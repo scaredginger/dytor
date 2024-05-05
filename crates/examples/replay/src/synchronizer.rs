@@ -21,9 +21,7 @@ pub struct Event<T> {
 }
 
 #[derive(UniquelyNamed)]
-pub struct Synchronizer {
-    completed: bool,
-}
+pub struct Synchronizer {}
 
 register_actor!(Synchronizer);
 
@@ -40,7 +38,7 @@ impl Actor for Synchronizer {
         args.send_msg(key, move |_, obj| {
             obj.spawn_with(move || background_task(sources))
         });
-        Ok(Self { completed: false })
+        Ok(Self {})
     }
 }
 

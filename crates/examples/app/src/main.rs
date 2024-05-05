@@ -53,11 +53,10 @@ fn main() {
                 imported_scopes: vec![],
             },
         },
-        shared_lib_paths: vec![
-            Path::new("target/x86_64-unknown-linux-gnu/debug/liblib1.so").into(),
-            Path::new("target/x86_64-unknown-linux-gnu/debug/liblib2.so").into(),
-            Path::new("target/x86_64-unknown-linux-gnu/debug/libreplay_mock.so").into(),
-        ],
+        shared_lib_paths: vec![Path::new(
+            "target/x86_64-unknown-linux-gnu/debug/libreplay_mock.so",
+        )
+        .into()],
     };
 
     for p in &config.shared_lib_paths {

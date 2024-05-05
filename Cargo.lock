@@ -148,20 +148,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lib1"
-version = "0.1.0"
-dependencies = [
- "common",
-]
-
-[[package]]
-name = "lib2"
-version = "0.1.0"
-dependencies = [
- "common",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"

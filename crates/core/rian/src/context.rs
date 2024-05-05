@@ -62,11 +62,13 @@ pub(crate) struct ContextData {
     pub(crate) unsent_messages: Vec<(ContextId, Msg)>,
 }
 
+type DropFn = unsafe fn(*mut u8);
+
 // TODO: move this to runtime module
 pub struct Context {
     pub(crate) data: ContextData,
     pub(crate) arena: Arena,
-    pub(crate) drop_fns: Vec<(Offset, unsafe fn(*mut u8))>,
+    pub(crate) drop_fns: Vec<(Offset, DropFn)>,
     pub(crate) rx: MsgRx,
     pub(crate) links: Box<[ContextLink]>,
     pub(crate) _unsend_marker: PhantomUnsend,
@@ -172,7 +174,7 @@ impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
         Accessor {
             offset: self.actor_offset,
             metadata: (),
-            ctx_queue: (&self.data.make_tx[self.data.id.as_index()])(),
+            ctx_queue: (self.data.make_tx[self.data.id.as_index()])(),
             control_block_ptr: self.control_block_ptr.0,
             _phantom: PhantomData,
         }
@@ -183,7 +185,7 @@ impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
         Accessor {
             offset: key.loc.offset,
             metadata: key.meta,
-            ctx_queue: (&self.data.make_tx[key.loc.context_id.as_index()])(),
+            ctx_queue: (self.data.make_tx[key.loc.context_id.as_index()])(),
             control_block_ptr: self.control_block_ptr.0,
             _phantom: PhantomData,
         }
@@ -350,7 +352,7 @@ impl<T: ?Sized> Drop for Accessor<T> {
 unsafe impl<T: ?Sized> Send for Accessor<T> {}
 
 impl<T: ?Sized + 'static> Accessor<T> {
-    pub fn send(&self, f: impl 'static + Send + FnOnce(&mut MainArgs, &mut T) -> ()) {
+    pub fn send(&self, f: impl 'static + Send + FnOnce(&mut MainArgs, &mut T)) {
         let offset = self.offset;
         let metadata = self.metadata;
         let queued_fn = Box::new(move |ctx: &mut Context| {

@@ -36,7 +36,7 @@ impl Registry {
         REGISTRY.get_or_init(|| {
             let mut registry = RegistryBuilder::default();
             let mut ptr = INIT_FNS.load(Ordering::Acquire);
-            while ptr != core::ptr::null_mut() {
+            while !ptr.is_null() {
                 let node = unsafe { &*ptr };
                 (node.f)(&mut registry).unwrap();
                 ptr = node.next.load(Ordering::Relaxed);
@@ -101,37 +101,6 @@ macro_rules! register_actor {
     };
 }
 
-macro_rules! register_driver {
-    ($struct:ident) => {
-        register_driver!($struct {});
-    };
-    ($struct:ident { $(dyn $trait:ident),* $(,)? }) => {
-        $crate::paste::paste! {
-            #[allow(non_snake_case)]
-            mod [<__declare_driver_ $struct>] {
-                use super::{$struct, $($trait,)*};
-                use std::{sync::atomic::Ordering, collections::HashMap, any::TypeId};
-                use $crate::registry::__private::*;
-
-                fn get_metadata() -> impl Iterator<Item = (TraitId, InterfaceMetadata)> {
-                    [
-                        $(
-                            metadata_helper::<dyn $trait, $struct>(std::ptr::null::<$struct>())
-                        ,)*
-                    ].into_iter()
-                }
-
-                static NODE: ListNode = ListNode::new(|r| init_driver::<$struct>(r, get_metadata()));
-
-                #[ctor::ctor]
-                fn $struct() {
-                    init_node(&NODE);
-                }
-            }
-        }
-    };
-}
-
 // this Any is unimportant; I just need something I'm confident has the
 // same size and align of any trait object metadata
 #[repr(transparent)]
@@ -153,7 +122,12 @@ pub mod __private {
         (
             TraitId::of::<D>(),
             InterfaceMetadata {
-                dyn_meta: unsafe { std::mem::transmute(dyn_meta) },
+                dyn_meta: unsafe {
+                    std::mem::transmute::<
+                        std::ptr::DynMetadata<D>,
+                        crate::registry::DynMetaPlaceholder,
+                    >(dyn_meta)
+                },
                 type_id: TypeId::of::<S>(),
             },
         )
@@ -189,7 +163,7 @@ pub mod __private {
             registry.trait_types.entry(trait_id).or_default().push(meta);
         }
         anyhow::ensure!(
-            !prev.is_some(),
+            prev.is_none(),
             "Actor {} registered twice",
             type_name::<T>()
         );

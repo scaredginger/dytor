@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::mem::align_of;
 use std::ptr::DynMetadata;
 
-use serde::de::{Deserialize, DeserializeOwned};
+use serde::de::DeserializeOwned;
 
 pub use rian_proc_macros::{uniquely_named, UniquelyNamed};
 

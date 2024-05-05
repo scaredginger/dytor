@@ -1,7 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::thread;
-use std::time::Duration;
 use tokio::signal::unix::{signal, SignalKind};
 
 use common::anyhow;
@@ -65,7 +64,7 @@ fn run_async_event_loop(mut task_rx: mpsc::UnboundedReceiver<LazyDynFut>) {
 
     let local = LocalSet::new();
     local.spawn_local(async move {
-        // let mut signal = signal(SignalKind::interrupt()).unwrap();
+        let mut signal = signal(SignalKind::interrupt()).unwrap();
         loop {
             select! {
                 biased;
@@ -76,7 +75,7 @@ fn run_async_event_loop(mut task_rx: mpsc::UnboundedReceiver<LazyDynFut>) {
                         None => break,
                     };
                 }
-                _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                _ = signal.recv() => {
                     break;
                 }
             }

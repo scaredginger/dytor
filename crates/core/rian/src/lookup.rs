@@ -1,5 +1,5 @@
 use std::{
-    any::{type_name, Any, TypeId},
+    any::{type_name, TypeId},
     collections::HashMap,
     marker::PhantomData,
     mem,
@@ -13,7 +13,7 @@ use crate::{
     arena::Offset,
     context::ActorId,
     object::{TraitId, VTable},
-    Accessor, ContextId, InitArgs, MainArgs, Registry,
+    registry, Accessor, ContextId, InitArgs, MainArgs, Registry,
 };
 
 #[derive(Clone)]
@@ -37,7 +37,7 @@ impl<T: 'static> Lookup<T, ()> for ActorTree
 where
     T: Pointee<Metadata = ()>,
 {
-    fn lookup(&self, from_actor: ActorId) -> impl '_ + Iterator<Item = (ActorId, Key<T>)> {
+    fn lookup(&self, _from_actor: ActorId) -> impl '_ + Iterator<Item = (ActorId, Key<T>)> {
         let type_id = TypeId::of::<T>();
         self.actors
             .iter()
@@ -58,7 +58,7 @@ impl<T: ?Sized + 'static> Lookup<T, DynMetadata<T>> for ActorTree
 where
     T: Pointee<Metadata = DynMetadata<T>>,
 {
-    fn lookup(&self, from_actor: ActorId) -> impl '_ + Iterator<Item = (ActorId, Key<T>)> {
+    fn lookup(&self, _from_actor: ActorId) -> impl '_ + Iterator<Item = (ActorId, Key<T>)> {
         let trait_id = TraitId::of::<T>();
         let types: &[_] = Registry::get()
             .trait_types
@@ -77,7 +77,12 @@ where
                     actor.id,
                     Key {
                         loc: actor.loc,
-                        meta: unsafe { std::mem::transmute(t.dyn_meta) },
+                        meta: unsafe {
+                            std::mem::transmute::<
+                                registry::DynMetaPlaceholder,
+                                std::ptr::DynMetadata<T>,
+                            >(t.dyn_meta)
+                        },
                     },
                 )
             })
@@ -126,7 +131,7 @@ where
                 Accessor {
                     offset: key.loc.offset,
                     metadata: key.meta,
-                    ctx_queue: (&self.init_args.data.make_tx[key.loc.context_id.as_index()])(),
+                    ctx_queue: (self.init_args.data.make_tx[key.loc.context_id.as_index()])(),
                     control_block_ptr: self.init_args.control_block_ptr.0,
                     _phantom: PhantomData,
                 }
@@ -200,8 +205,10 @@ pub(crate) struct Loc {
     pub(crate) offset: Offset,
 }
 
+type MetaSlice<T> = Arc<[(Offset, <T as Pointee>::Metadata)]>;
+
 pub struct BroadcastGroup<T: ?Sized> {
-    pub(crate) by_context: Box<[(ContextId, Arc<[(Offset, <T as Pointee>::Metadata)]>)]>,
+    pub(crate) by_context: Box<[(ContextId, MetaSlice<T>)]>,
 }
 
 pub struct Key<T: ?Sized> {
@@ -211,10 +218,7 @@ pub struct Key<T: ?Sized> {
 
 impl<T: ?Sized> Clone for Key<T> {
     fn clone(&self) -> Self {
-        Self {
-            loc: self.loc.clone(),
-            meta: self.meta.clone(),
-        }
+        *self
     }
 }
 
