@@ -37,7 +37,6 @@ pub(crate) struct VTable {
         fn(serde_value::Value) -> anyhow::Result<Box<dyn Any + Send>>,
     pub(crate) constructor: ObjectConstructor,
     pub(crate) drop: unsafe fn(*mut u8),
-    pub(crate) name: fn() -> &'static str,
     pub(crate) type_id: TypeId,
     size: usize,
     align: usize,
@@ -61,7 +60,6 @@ impl VTable {
                 let this = ptr.cast::<T>();
                 unsafe { std::ptr::drop_in_place(this) };
             },
-            name: T::name,
             type_id: TypeId::of::<T>(),
             size: std::mem::size_of::<T>(),
             align: std::mem::align_of::<T>(),

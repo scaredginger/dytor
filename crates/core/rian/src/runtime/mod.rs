@@ -1,9 +1,11 @@
 use std::{
     alloc::Layout,
+    any::TypeId,
+    collections::HashMap,
     mem,
     sync::{
         atomic::{self, Ordering},
-        Arc,
+        Arc, LazyLock,
     },
 };
 
@@ -12,7 +14,7 @@ use crate::{
     config::ActorConfig,
     context::{
         ActorId, Context, ContextData, ContextId, ContextLink, ControlBlockPtr, InitArgs, InitData,
-        MsgRx, MsgTx, QueueItem,
+        LazyResource, MsgRx, MsgTx, QueueItem,
     },
     lookup::{ActorData, ActorTree, Loc},
     object::{ObjectConstructor, VTable},
@@ -52,6 +54,21 @@ fn create_context_args(config: Config) -> Vec<ContextConstructorArgs> {
             .all(|(i, b)| i == b.id.as_index()),
         "Contexts are not named as 1 ..= n"
     );
+
+    let resource_map: HashMap<_, _> = Registry::get()
+        .resource_constructors
+        .iter()
+        .map(|(type_id, f)| {
+            (
+                *type_id,
+                LazyLock::new({
+                    let f2 = f.clone();
+                    Box::new(move || f2()) as _
+                }),
+            )
+        })
+        .collect();
+    let resource_map = Arc::new(resource_map);
 
     struct ContextData {
         tx: remote::Tx<QueueItem>,
@@ -128,6 +145,7 @@ fn create_context_args(config: Config) -> Vec<ContextConstructorArgs> {
             make_tx: make_tx.clone(),
             tree: None,
             control_block_ptr: control_block_ptr.clone(),
+            resource_map: resource_map.clone(),
         })
     }
     control_block_ptr.release();
@@ -144,7 +162,7 @@ struct ActorConstructorInfo {
     id: ActorId,
     offset: Offset,
     vtable: &'static VTable,
-    cfg: serde_value::Value,
+    cfg: ActorConfig,
 }
 
 struct ContextConstructorArgs {
@@ -156,6 +174,7 @@ struct ContextConstructorArgs {
     tree: Option<Arc<ActorTree>>,
     make_tx: Arc<[Box<dyn Send + Sync + 'static + Fn() -> MsgTx>]>,
     control_block_ptr: ControlBlockPtr,
+    resource_map: Arc<HashMap<TypeId, LazyResource>>,
 }
 
 fn allocate_actors(
@@ -165,11 +184,13 @@ fn allocate_actors(
     let mut constructor_info: Vec<_> = configs
         .into_iter()
         .map(|(id, cfg)| {
+            let (_, vtable) = registry.by_name(&cfg.typename).unwrap();
+            assert!(matches!(vtable.constructor, ObjectConstructor::Actor(_)));
             ActorConstructorInfo {
                 id,
                 offset: Offset(0), // filled later
-                vtable: registry.by_name(&cfg.typename).unwrap().1,
-                cfg: cfg.config,
+                vtable,
+                cfg,
             }
         })
         .collect();
@@ -195,6 +216,7 @@ fn create_context(info: ContextConstructorArgs) -> (Context, ControlBlockPtr) {
         tree,
         make_tx,
         control_block_ptr,
+        resource_map,
     } = info;
     let data = ContextData {
         id,
@@ -217,9 +239,10 @@ fn create_context(info: ContextConstructorArgs) -> (Context, ControlBlockPtr) {
             actor_being_constructed: actor.id,
             actor_offset: actor.offset,
             control_block_ptr: &control_block_ptr,
+            resources: &resource_map,
             _phantom: std::marker::PhantomData,
         };
-        let cfg = (actor.vtable.deserialize_yaml_value)(actor.cfg).unwrap();
+        let cfg = (actor.vtable.deserialize_yaml_value)(actor.cfg.config).unwrap();
         let offset = actor.offset;
         let buf = arena.at_offset(offset, actor.vtable.layout());
         match actor.vtable.constructor {

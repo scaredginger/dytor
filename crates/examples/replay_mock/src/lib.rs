@@ -6,15 +6,14 @@ use replay::tokio::sync::mpsc;
 use replay::tokio_stream::wrappers::ReceiverStream;
 use replay::{tokio, TokioSingleThread};
 use common::anyhow;
-use common::chrono::{DateTime, Utc};
-use common::rian::lookup::{BroadcastGroup, Key};
+use common::chrono::DateTime;
+use common::rian::lookup::BroadcastGroup;
 use common::rian::{register_actor, Actor, InitArgs, MainArgs, UniquelyNamed};
 
 #[derive(UniquelyNamed)]
 pub struct IntervalUnitProducer {
-    times: Vec<DateTime<Utc>>,
     consumers: BroadcastGroup<IntervalUnitConsumer>,
-    tokio: Key<TokioSingleThread>,
+    rx: Option<tokio::sync::mpsc::Receiver<Event<()>>>,
 }
 
 #[derive(UniquelyNamed)]
@@ -44,19 +43,24 @@ impl Actor for IntervalUnitProducer {
     type Config = ();
 
     fn init(mut args: InitArgs<Self>, _config: ()) -> anyhow::Result<Self> {
-        let mut times = Vec::new();
-        for i in 1..=10i64 {
-            times.push(DateTime::from_timestamp_nanos(i * 1_000_000_000));
-        }
-        times.reverse();
-        // let times = Utc::offset_from_utc_datetime(&self, utc)
-        let consumers = args.query().broadcast_group();
+        let (tx, rx) = mpsc::channel(2);
+        let tokio = args.get_resource::<TokioSingleThread>();
+        tokio.spawn_with(move || async move {
+            for t in 1..=10i64 {
+                let t = DateTime::from_timestamp_nanos(t * 1_000_000_000);
+                let ev = Event {
+                    timestamp: t,
+                    tie_break: 0,
+                    obj: (),
+                };
+                tx.send(ev).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
 
-        let tokio = args.query().exactly_one_key();
         Ok(Self {
-            times,
-            consumers,
-            tokio,
+            consumers: args.query().broadcast_group(),
+            rx: Some(rx),
         })
     }
 }
@@ -66,24 +70,9 @@ impl TypedProducer for IntervalUnitProducer {
 
     fn event_stream(
         &mut self,
-        args: &mut MainArgs,
+        _args: &mut MainArgs,
     ) -> impl Stream<Item = Event<Self::Item>> + Send + 'static {
-        let (tx, rx) = mpsc::channel(2);
-        let mut times = self.times.clone();
-        args.send_msg(self.tokio, move |_, tokio| {
-            tokio.spawn_with(move || async move {
-                while let Some(t) = times.pop() {
-                    let ev = Event {
-                        timestamp: t,
-                        tie_break: 0,
-                        obj: (),
-                    };
-                    tx.send(ev).await.unwrap();
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                }
-            });
-        });
-        ReceiverStream::from(rx)
+        ReceiverStream::from(self.rx.take().unwrap())
     }
 
     fn process_event(&mut self, args: &mut MainArgs, item: Event<Self::Item>) {

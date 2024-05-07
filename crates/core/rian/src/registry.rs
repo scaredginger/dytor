@@ -2,6 +2,7 @@ use core::sync::atomic::AtomicPtr;
 use std::any::{type_name, Any, TypeId};
 use std::mem::MaybeUninit;
 use std::ptr::DynMetadata;
+use std::sync::Arc;
 
 pub(crate) use __private::ActorRegistered;
 pub(crate) use __private::InterfaceMetadata;
@@ -20,12 +21,17 @@ static INIT_FNS: AtomicPtr<ListNode> = AtomicPtr::new(core::ptr::null_mut());
 pub struct RegistryBuilder {
     pub(crate) actor_types: HashMap<TypeId, VTable>,
     pub(crate) trait_types: HashMap<TraitId, Vec<InterfaceMetadata>>,
+    pub(crate) name_to_type_id: HashMap<&'static str, TypeId>,
+    pub(crate) resource_constructors:
+        HashMap<TypeId, Arc<dyn Send + Sync + Fn() -> Box<dyn Any + Send + Sync>>>,
 }
 
 pub(crate) struct Registry {
     pub(crate) actor_types: HashMap<TypeId, VTable>,
     pub(crate) trait_types: HashMap<TraitId, Box<[InterfaceMetadata]>>,
     pub(crate) name_to_type_id: HashMap<&'static str, TypeId>,
+    pub(crate) resource_constructors:
+        HashMap<TypeId, Arc<dyn Send + Sync + Fn() -> Box<dyn Any + Send + Sync>>>,
 }
 
 impl Registry {
@@ -45,13 +51,11 @@ impl Registry {
 
             let RegistryBuilder {
                 actor_types,
+                name_to_type_id,
                 trait_types,
+                resource_constructors,
             } = registry;
 
-            let mut name_to_type_id = HashMap::with_capacity(actor_types.len());
-            for (k, v) in &actor_types {
-                assert!(name_to_type_id.insert((v.name)(), *k).is_none());
-            }
             Registry {
                 actor_types,
                 trait_types: trait_types
@@ -59,6 +63,7 @@ impl Registry {
                     .map(|(k, v)| (k, v.into_boxed_slice()))
                     .collect(),
                 name_to_type_id,
+                resource_constructors,
             }
         })
     }
@@ -71,6 +76,26 @@ impl Registry {
 }
 
 #[macro_export]
+macro_rules! register_resource {
+    ($closure:expr) => {
+        $crate::paste::paste! {
+            #[allow(non_snake_case)]
+            mod __declare_resource {
+                use $crate::registry::__private::*;
+                use super::*;
+
+                static NODE: ListNode = ListNode::new(|r| init_resource(r, $closure));
+
+                #[ctor::ctor]
+                fn foo() {
+                    init_node(&NODE);
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! register_actor {
     ($struct:ident) => {
         register_actor!($struct {});
@@ -80,7 +105,6 @@ macro_rules! register_actor {
             #[allow(non_snake_case)]
             mod [<__declare_actor_ $struct>] {
                 use super::{$struct, $($trait,)*};
-                use std::{sync::atomic::Ordering, collections::HashMap, any::TypeId};
                 use $crate::registry::__private::*;
 
                 fn get_metadata() -> impl Iterator<Item = (TraitId, InterfaceMetadata)> {
@@ -125,6 +149,13 @@ pub mod __private {
     )]
     pub trait ActorRegistered {}
 
+    #[diagnostic::on_unimplemented(
+        message = "The runtime will not recognise {Self} as a resource.",
+        label = "`{Self}` has not been registered as a resource.",
+        note = "Adding `register_resource!({Self});` will fix this error."
+    )]
+    pub trait ResourceRegistered {}
+
     pub fn metadata_helper<D: ?Sized + Dyn, S: 'static>(
         ptr: *const D,
     ) -> (TraitId, InterfaceMetadata) {
@@ -162,6 +193,21 @@ pub mod __private {
         }
     }
 
+    pub fn init_resource<T: 'static + Send + Sync>(
+        registry: &mut RegistryBuilder,
+        f: fn() -> T,
+    ) -> anyhow::Result<()> {
+        let prev = registry
+            .resource_constructors
+            .insert(TypeId::of::<T>(), Arc::new(move || Box::new(f()) as _));
+        anyhow::ensure!(
+            prev.is_none(),
+            "Resource {} registered twice",
+            type_name::<T>()
+        );
+        Ok(())
+    }
+
     pub fn init_actor<T: Actor>(
         registry: &mut RegistryBuilder,
         traits: impl Iterator<Item = (TraitId, InterfaceMetadata)>,
@@ -177,6 +223,10 @@ pub mod __private {
             "Actor {} registered twice",
             type_name::<T>()
         );
+        assert!(registry
+            .name_to_type_id
+            .insert(T::name(), TypeId::of::<T>())
+            .is_none());
         Ok(())
     }
 

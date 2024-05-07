@@ -30,11 +30,6 @@ fn main() {
                 children: HashMap::default(),
                 actors: vec![
                     ActorConfig {
-                        typename: "TokioSingleThread".into(),
-                        config: SerdeValue::Unit,
-                        context: ContextId::new(1).unwrap(),
-                    },
-                    ActorConfig {
                         typename: "Synchronizer".into(),
                         config: SerdeValue::Unit,
                         context: ContextId::new(1).unwrap(),

@@ -3,10 +3,8 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::pin::Pin;
 
-use common::anyhow::{anyhow, Result};
+use common::anyhow::Result;
 use common::chrono::{DateTime, Utc};
-use common::itertools::Itertools as _;
-use common::rian::lookup::Key;
 use common::rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
 use tokio::sync::oneshot;
 pub use tokio_stream::{Stream, StreamExt};
@@ -29,15 +27,9 @@ impl Actor for Synchronizer {
     type Config = ();
 
     fn init(mut args: InitArgs<Self>, _config: Self::Config) -> Result<Self> {
-        let key: Key<TokioSingleThread> = args
-            .query()
-            .all_keys()
-            .exactly_one()
-            .map_err(|_| anyhow!("Multiple tokio runtimes"))?;
         let sources = args.query().all_accessors().collect();
-        args.send_msg(key, move |_, obj| {
-            obj.spawn_with(move || background_task(sources))
-        });
+        args.get_resource::<TokioSingleThread>()
+            .spawn_with(move || background_task(sources));
         Ok(Self {})
     }
 }

@@ -1,5 +1,7 @@
 use std::{
     alloc::Layout,
+    any::{Any, TypeId},
+    collections::HashMap,
     marker::PhantomData,
     mem::{self, MaybeUninit},
     num::NonZeroU32,
@@ -7,7 +9,7 @@ use std::{
     ptr::{self, NonNull, Pointee},
     sync::{
         atomic::{fence, AtomicU32, Ordering},
-        Arc,
+        Arc, LazyLock,
     },
 };
 
@@ -104,11 +106,15 @@ pub(crate) struct InitData {
     pub(crate) make_tx: Arc<[Box<dyn Fn() -> MsgTx + Send + Sync>]>,
 }
 
+type SharedAny = Box<dyn Send + Sync + Any>;
+pub(crate) type LazyResource = LazyLock<SharedAny, Box<dyn Send + Sync + FnOnce() -> SharedAny>>;
+
 pub struct InitArgs<'a, ActorT> {
     pub(crate) data: &'a mut InitData,
     pub(crate) actor_being_constructed: ActorId,
     pub(crate) actor_offset: Offset,
     pub(crate) control_block_ptr: &'a ControlBlockPtr,
+    pub(crate) resources: &'a HashMap<TypeId, LazyResource>,
     pub(crate) _phantom: PhantomData<ActorT>,
 }
 
@@ -165,6 +171,12 @@ impl<'a, ActorT> InitArgs<'a, ActorT> {
         <T as Pointee>::Metadata: 'static,
     {
         self.data.broadcast(group, f)
+    }
+
+    pub fn get_resource<T: 'static + Send + Sync>(&self) -> &T {
+        let id = TypeId::of::<T>();
+        let t = &**self.resources.get(&id).unwrap();
+        t.downcast_ref().unwrap()
     }
 }
 
