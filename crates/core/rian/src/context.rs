@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 use crate::{
     arena::{Arena, Offset},
-    lookup::{ActorTree, BroadcastGroup, DependenceRelation, Key, Query},
+    lookup::{ActorTree, BroadcastGroup, DependenceRelation, Key, Lookup, Query},
     queue::remote,
 };
 
@@ -203,6 +203,61 @@ impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
         }
     }
 }
+
+pub trait Grab<T> {
+    fn grab(&mut self) -> T;
+}
+
+impl<'a, T: ?Sized + 'static, ActorT> Grab<Key<T>> for InitArgs<'a, ActorT>
+where
+    ActorTree: Lookup<T, <T as Pointee>::Metadata>,
+{
+    fn grab(&mut self) -> Key<T> {
+        self.query().exactly_one_key()
+    }
+}
+
+macro_rules! generate_impl {
+    ($($sym:ident),*) => {
+
+        impl<Base, $($sym,)*> Grab<($($sym,)*)> for Base
+        where
+            Base: $(Grab<$sym> +)*,
+        {
+            fn grab(&mut self) -> ($($sym,)*) {
+                ($({ let _: PhantomData::<$sym>; Grab::grab(self) },)*)
+            }
+        }
+
+    };
+}
+
+generate_impl!(A);
+generate_impl!(A, B);
+generate_impl!(A, B, C);
+generate_impl!(A, B, C, D);
+generate_impl!(A, B, C, D, E);
+generate_impl!(A, B, C, D, E, F);
+generate_impl!(A, B, C, D, E, F, G);
+generate_impl!(A, B, C, D, E, F, G, H);
+generate_impl!(A, B, C, D, E, F, G, H, I);
+generate_impl!(A, B, C, D, E, F, G, H, I, J);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y);
+generate_impl!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z);
 
 pub struct MainArgs<'a> {
     pub(crate) context_data: &'a mut ContextData,
