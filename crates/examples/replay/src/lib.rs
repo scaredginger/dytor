@@ -1,6 +1,6 @@
 pub use tokio;
 
 pub mod synchronizer;
-mod tokio_actor;
-pub use tokio_actor::{LazyDynFut, TokioSingleThread};
+mod tokio_wrapper;
 pub use tokio_stream;
+pub use tokio_wrapper::{LazyDynFut, TokioSingleThread};
