@@ -1,21 +1,12 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::pin::Pin;
 
 use common::anyhow::Result;
-use common::chrono::{DateTime, Utc};
-use common::rian::{register_actor, Accessor, Actor, InitArgs, MainArgs, UniquelyNamed};
+use common::rian::{register_actor, Accessor, Actor, InitArgs, UniquelyNamed};
 use tokio::sync::oneshot;
-pub use tokio_stream::{Stream, StreamExt};
+pub use tokio_stream::StreamExt;
 
-use crate::TokioSingleThread;
-
-#[derive(Clone, Copy)]
-pub struct Event<T> {
-    pub timestamp: DateTime<Utc>,
-    pub tie_break: u64,
-    pub obj: T,
-}
+use crate::{DynStream, Event, Producer, TokioSingleThread, UntypedBox};
 
 #[derive(UniquelyNamed)]
 pub struct Synchronizer {}
@@ -33,71 +24,6 @@ impl Actor for Synchronizer {
         Ok(Self {})
     }
 }
-
-mod private {
-    use super::*;
-    pub trait Sealed {}
-    impl<T: TypedProducer> Sealed for T {}
-}
-
-pub trait TypedProducer {
-    type Item: Send + 'static;
-
-    fn event_stream(
-        &mut self,
-        args: &mut MainArgs,
-        runtime: TokioSingleThread,
-    ) -> impl Stream<Item = Event<Self::Item>> + Send + 'static;
-    fn process_event(&mut self, args: &mut MainArgs, item: Event<Self::Item>);
-}
-
-#[allow(private_interfaces)]
-impl<T: TypedProducer> Producer for T {
-    fn create_stream(&mut self, args: &mut MainArgs, runtime: TokioSingleThread) -> DynStream {
-        Box::pin(TypedProducer::event_stream(self, args, runtime).map(
-            |Event {
-                 timestamp,
-                 tie_break,
-                 obj,
-             }| Event {
-                timestamp,
-                tie_break,
-                obj: UntypedBox(Box::leak(Box::new(obj)) as *mut _ as _),
-            },
-        ))
-    }
-
-    fn process_event(&mut self, args: &mut MainArgs, event: Event<UntypedBox>) {
-        let Event {
-            timestamp,
-            tie_break,
-            obj,
-        } = event;
-        let obj = *unsafe { Box::from_raw(obj.0 as *mut T::Item) };
-        TypedProducer::process_event(
-            self,
-            args,
-            Event {
-                timestamp,
-                tie_break,
-                obj,
-            },
-        );
-    }
-}
-
-type DynStream = Pin<Box<dyn Send + Stream<Item = Event<UntypedBox>>>>;
-
-#[repr(transparent)]
-struct UntypedBox(*mut u8);
-unsafe impl Send for UntypedBox {}
-
-#[allow(private_interfaces)]
-pub trait Producer: private::Sealed {
-    fn create_stream(&mut self, args: &mut MainArgs, runtime: TokioSingleThread) -> DynStream;
-    fn process_event(&mut self, args: &mut MainArgs, item: Event<UntypedBox>);
-}
-
 struct HeapEntry {
     next_event: Event<UntypedBox>,
     acc: Accessor<dyn Producer>,

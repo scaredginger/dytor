@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use replay::synchronizer::{Event, Producer, Stream, TypedProducer};
-
 use replay::tokio::sync::mpsc;
 use replay::tokio_stream::wrappers::ReceiverStream;
-use replay::{tokio, TokioSingleThread};
+use replay::tokio_stream::Stream;
+use replay::{tokio, Event, Producer, TokioSingleThread, TypedProducer};
+
 use common::anyhow;
 use common::chrono::DateTime;
 use common::rian::lookup::BroadcastGroup;
