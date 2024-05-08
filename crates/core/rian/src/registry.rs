@@ -97,20 +97,20 @@ macro_rules! register_resource {
 
 #[macro_export]
 macro_rules! register_actor {
-    ($struct:ident) => {
+    ($struct:ty) => {
         register_actor!($struct {});
     };
-    ($struct:ident { $(dyn $trait:ident),* $(,)? }) => {
+    ($struct:ty { $($trait_impl:ty),* $(,)? }) => {
         $crate::paste::paste! {
             #[allow(non_snake_case)]
             mod [<__declare_actor_ $struct>] {
-                use super::{$struct, $($trait,)*};
+                use super::*;
                 use $crate::registry::__private::*;
 
                 fn get_metadata() -> impl Iterator<Item = (TraitId, InterfaceMetadata)> {
                     [
                         $(
-                            metadata_helper::<dyn $trait, $struct>(std::ptr::null::<$struct>())
+                            metadata_helper::<$trait_impl, $struct>(std::ptr::null::<$struct>())
                         ,)*
                     ].into_iter()
                 }
