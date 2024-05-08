@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::thread;
 use tokio::signal::unix::{signal, SignalKind};
 
@@ -8,8 +9,9 @@ use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::LocalSet;
 
+#[derive(Clone)]
 pub struct TokioSingleThread {
-    task_tx: mpsc::UnboundedSender<LazyDynFut>,
+    task_tx: Arc<mpsc::UnboundedSender<LazyDynFut>>,
 }
 
 register_resource!(|| {
@@ -17,7 +19,9 @@ register_resource!(|| {
     thread::spawn(move || {
         run_async_event_loop(task_rx);
     });
-    TokioSingleThread { task_tx }
+    TokioSingleThread {
+        task_tx: Arc::new(task_tx),
+    }
 });
 
 impl TokioSingleThread {

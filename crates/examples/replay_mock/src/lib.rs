@@ -13,7 +13,6 @@ use common::rian::{register_actor, Actor, InitArgs, MainArgs, UniquelyNamed};
 #[derive(UniquelyNamed)]
 pub struct IntervalUnitProducer {
     consumers: BroadcastGroup<IntervalUnitConsumer>,
-    rx: Option<tokio::sync::mpsc::Receiver<Event<()>>>,
 }
 
 #[derive(UniquelyNamed)]
@@ -43,9 +42,22 @@ impl Actor for IntervalUnitProducer {
     type Config = ();
 
     fn init(mut args: InitArgs<Self>, _config: ()) -> anyhow::Result<Self> {
+        Ok(Self {
+            consumers: args.query().broadcast_group(),
+        })
+    }
+}
+
+impl TypedProducer for IntervalUnitProducer {
+    type Item = ();
+
+    fn event_stream(
+        &mut self,
+        _args: &mut MainArgs,
+        runtime: TokioSingleThread,
+    ) -> impl Stream<Item = Event<Self::Item>> + Send + 'static {
         let (tx, rx) = mpsc::channel(2);
-        let tokio = args.get_resource::<TokioSingleThread>();
-        tokio.spawn_with(move || async move {
+        runtime.spawn_with(move || async move {
             for t in 1..=10i64 {
                 let t = DateTime::from_timestamp_nanos(t * 1_000_000_000);
                 let ev = Event {
@@ -57,22 +69,7 @@ impl Actor for IntervalUnitProducer {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
         });
-
-        Ok(Self {
-            consumers: args.query().broadcast_group(),
-            rx: Some(rx),
-        })
-    }
-}
-
-impl TypedProducer for IntervalUnitProducer {
-    type Item = ();
-
-    fn event_stream(
-        &mut self,
-        _args: &mut MainArgs,
-    ) -> impl Stream<Item = Event<Self::Item>> + Send + 'static {
-        ReceiverStream::from(self.rx.take().unwrap())
+        ReceiverStream::from(rx)
     }
 
     fn process_event(&mut self, args: &mut MainArgs, item: Event<Self::Item>) {

@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::pin::Pin;
@@ -28,8 +27,9 @@ impl Actor for Synchronizer {
 
     fn init(mut args: InitArgs<Self>, _config: Self::Config) -> Result<Self> {
         let sources = args.query().all_accessors().collect();
-        args.get_resource::<TokioSingleThread>()
-            .spawn_with(move || background_task(sources));
+        let runtime = args.get_resource::<TokioSingleThread>();
+        let runtime2 = runtime.clone();
+        runtime.spawn_with(move || background_task(sources, runtime2));
         Ok(Self {})
     }
 }
@@ -46,54 +46,60 @@ pub trait TypedProducer {
     fn event_stream(
         &mut self,
         args: &mut MainArgs,
+        runtime: TokioSingleThread,
     ) -> impl Stream<Item = Event<Self::Item>> + Send + 'static;
     fn process_event(&mut self, args: &mut MainArgs, item: Event<Self::Item>);
 }
 
+#[allow(private_interfaces)]
 impl<T: TypedProducer> Producer for T {
-    fn create_stream(&mut self, args: &mut MainArgs) -> DynStream {
-        Box::pin(TypedProducer::event_stream(self, args).map(
+    fn create_stream(&mut self, args: &mut MainArgs, runtime: TokioSingleThread) -> DynStream {
+        Box::pin(TypedProducer::event_stream(self, args, runtime).map(
             |Event {
                  timestamp,
                  tie_break,
                  obj,
-             }| {
-                Event {
-                    timestamp,
-                    tie_break,
-                    obj: Box::new(obj) as _,
-                }
+             }| Event {
+                timestamp,
+                tie_break,
+                obj: UntypedBox(Box::leak(Box::new(obj)) as *mut _ as _),
             },
         ))
     }
 
-    fn process_event(
-        &mut self,
-        args: &mut MainArgs,
-        Event {
+    fn process_event(&mut self, args: &mut MainArgs, event: Event<UntypedBox>) {
+        let Event {
             timestamp,
             tie_break,
             obj,
-        }: Event<Box<dyn Any>>,
-    ) {
-        let event = Event {
-            timestamp,
-            tie_break,
-            obj: *obj.downcast().unwrap(),
-        };
-        TypedProducer::process_event(self, args, event);
+        } = event;
+        let obj = *unsafe { Box::from_raw(obj.0 as *mut T::Item) };
+        TypedProducer::process_event(
+            self,
+            args,
+            Event {
+                timestamp,
+                tie_break,
+                obj,
+            },
+        );
     }
 }
 
-type DynStream = Pin<Box<dyn Send + Stream<Item = Event<Box<dyn Any + Send>>>>>;
+type DynStream = Pin<Box<dyn Send + Stream<Item = Event<UntypedBox>>>>;
 
+#[repr(transparent)]
+struct UntypedBox(*mut u8);
+unsafe impl Send for UntypedBox {}
+
+#[allow(private_interfaces)]
 pub trait Producer: private::Sealed {
-    fn create_stream(&mut self, args: &mut MainArgs) -> DynStream;
-    fn process_event(&mut self, args: &mut MainArgs, item: Event<Box<dyn Any>>);
+    fn create_stream(&mut self, args: &mut MainArgs, runtime: TokioSingleThread) -> DynStream;
+    fn process_event(&mut self, args: &mut MainArgs, item: Event<UntypedBox>);
 }
 
 struct HeapEntry {
-    next_event: Event<Box<dyn Any + Send>>,
+    next_event: Event<UntypedBox>,
     acc: Accessor<dyn Producer>,
     stream: DynStream,
 }
@@ -124,15 +130,16 @@ impl Ord for HeapEntry {
     }
 }
 
-async fn background_task(producers: Vec<Accessor<dyn Producer>>) {
+async fn background_task(producers: Vec<Accessor<dyn Producer>>, runtime: TokioSingleThread) {
     let mut heap = BinaryHeap::with_capacity(producers.len());
 
     let futures: Vec<_> = producers
         .into_iter()
         .map(|acc| {
             let (tx, rx) = oneshot::channel();
+            let runtime = runtime.clone();
             acc.send(|args, p| {
-                tx.send(p.create_stream(args))
+                tx.send(p.create_stream(args, runtime))
                     .unwrap_or_else(|_| panic!("Could not send"))
             });
             (acc, rx)
@@ -175,7 +182,7 @@ async fn background_task(producers: Vec<Accessor<dyn Producer>>) {
                 Event {
                     timestamp,
                     tie_break,
-                    obj: obj as _,
+                    obj,
                 },
             )
         });
