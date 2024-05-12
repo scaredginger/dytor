@@ -96,7 +96,7 @@ pub(crate) struct DependenceRelation {
 
 pub struct Query<'a, 'b, T: ?Sized, ActorT> {
     pub(crate) init_args: &'a mut InitArgs<'b, ActorT>,
-    pub(crate) phantom: PhantomData<T>,
+    pub(crate) phantom: PhantomData<fn() -> T>,
 }
 
 impl<'a, 'b, T: 'static + ?Sized, ActorT> Query<'a, 'b, T, ActorT>

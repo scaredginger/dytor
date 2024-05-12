@@ -115,7 +115,7 @@ pub struct InitArgs<'a, ActorT> {
     pub(crate) actor_offset: Offset,
     pub(crate) control_block_ptr: &'a ControlBlockPtr,
     pub(crate) resources: &'a HashMap<TypeId, LazyResource>,
-    pub(crate) _phantom: PhantomData<ActorT>,
+    pub(crate) _phantom: PhantomData<fn(ActorT) -> ActorT>,
 }
 
 impl Deref for InitData {
@@ -406,7 +406,7 @@ pub struct Accessor<T: ?Sized> {
     pub(crate) metadata: <T as Pointee>::Metadata,
     pub(crate) ctx_queue: remote::Tx<QueueItem>,
     pub(crate) control_block_ptr: NonNull<ControlBlock>,
-    pub(crate) _phantom: PhantomData<T>,
+    pub(crate) _phantom: PhantomData<fn() -> T>,
 }
 
 impl<T: ?Sized> Drop for Accessor<T> {
@@ -415,7 +415,6 @@ impl<T: ?Sized> Drop for Accessor<T> {
     }
 }
 
-/// safety: only _phantom stops it from being send
 unsafe impl<T: ?Sized> Send for Accessor<T> {}
 
 impl<T: ?Sized + 'static> Accessor<T> {
