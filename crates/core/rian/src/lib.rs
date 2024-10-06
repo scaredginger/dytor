@@ -1,4 +1,4 @@
-#![feature(ptr_metadata, const_type_id, lazy_cell)]
+#![feature(ptr_metadata, const_type_id)]
 #![allow(private_bounds)]
 
 use std::ptr::{DynMetadata, Pointee};

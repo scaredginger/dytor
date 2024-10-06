@@ -99,7 +99,7 @@ pub struct Query<'a, 'b, T: ?Sized, ActorT> {
     pub(crate) phantom: PhantomData<fn() -> T>,
 }
 
-impl<'a, 'b, T: 'static + ?Sized, ActorT> Query<'a, 'b, T, ActorT>
+impl<T: 'static + ?Sized, ActorT> Query<'_, '_, T, ActorT>
 where
     ActorTree: Lookup<T, <T as Pointee>::Metadata>,
 {
@@ -190,7 +190,7 @@ where
     }
 }
 
-impl<'a, 'b, T: ?Sized + 'static, ActorT> From<Query<'a, 'b, T, ActorT>> for BroadcastGroup<T>
+impl<T: ?Sized + 'static, ActorT> From<Query<'_, '_, T, ActorT>> for BroadcastGroup<T>
 where
     ActorTree: Lookup<T, <T as Pointee>::Metadata>,
 {
@@ -238,7 +238,7 @@ pub struct AcyclicLocalKey<T: ?Sized> {
     _phantom: PhantomData<*mut ()>,
 }
 
-impl<'a, 'b, T: ?Sized + 'static, ActorT> From<Query<'a, 'b, T, ActorT>> for AcyclicLocalKey<T>
+impl<T: ?Sized + 'static, ActorT> From<Query<'_, '_, T, ActorT>> for AcyclicLocalKey<T>
 where
     ActorTree: Lookup<T, <T as Pointee>::Metadata>,
 {

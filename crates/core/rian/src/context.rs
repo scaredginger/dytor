@@ -180,7 +180,7 @@ impl<'a, ActorT> InitArgs<'a, ActorT> {
     }
 }
 
-impl<'a, ActorT: 'static> InitArgs<'a, ActorT> {
+impl<ActorT: 'static> InitArgs<'_, ActorT> {
     pub fn accessor(&self) -> Accessor<ActorT> {
         mem::forget(self.control_block_ptr.clone());
         Accessor {
@@ -208,7 +208,7 @@ pub trait Grab<T> {
     fn grab(&mut self) -> T;
 }
 
-impl<'a, T: ?Sized + 'static, ActorT> Grab<Key<T>> for InitArgs<'a, ActorT>
+impl<T: ?Sized + 'static, ActorT> Grab<Key<T>> for InitArgs<'_, ActorT>
 where
     ActorTree: Lookup<T, <T as Pointee>::Metadata>,
 {
@@ -264,7 +264,7 @@ pub struct MainArgs<'a> {
     pub(crate) arena: &'a Arena,
 }
 
-impl<'a> MainArgs<'a> {
+impl MainArgs<'_> {
     pub fn send_msg<T: ?Sized>(
         &mut self,
         Key { loc, meta }: Key<T>,
