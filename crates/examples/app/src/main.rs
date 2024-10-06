@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ffi::CString};
 
 use common::{
-    rian::{
+    dytor::{
         self,
         config::{ActorConfig, Context, Scope},
         ContextId,
@@ -14,13 +14,13 @@ use serde_value::Value as SerdeValue;
 
 #[derive(Deserialize)]
 struct Config {
-    rian: rian::Config,
+    dytor: dytor::Config,
     shared_lib_paths: Vec<CString>,
 }
 
 fn main() {
     let config = Config {
-        rian: rian::Config {
+        dytor: dytor::Config {
             contexts: vec![Context {
                 id: ContextId::new(1).unwrap(),
                 thread_affinity: None,
@@ -68,7 +68,7 @@ fn main() {
         })
         .collect();
 
-    rian::run(config.rian);
+    dytor::run(config.dytor);
 
     for lib in libs {
         unsafe {

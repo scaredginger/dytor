@@ -7,8 +7,8 @@ use replay::{tokio, Event, Producer, TokioSingleThread, TypedProducer};
 
 use common::anyhow;
 use common::chrono::DateTime;
-use common::rian::lookup::BroadcastGroup;
-use common::rian::{register_actor, Actor, InitArgs, MainArgs, UniquelyNamed};
+use common::dytor::lookup::BroadcastGroup;
+use common::dytor::{register_actor, Actor, InitArgs, MainArgs, UniquelyNamed};
 
 #[derive(UniquelyNamed)]
 pub struct IntervalUnitProducer {

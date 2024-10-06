@@ -92,8 +92,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "dytor",
  "itertools",
- "rian",
  "serde",
  "serde-value",
 ]
@@ -103,6 +103,28 @@ name = "ctor"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad291aa74992b9b7a7e88c38acbbf6ad7e107f1d90ee8775b7bc1fc3394f485c"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "dytor"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ctor",
+ "dytor_proc_macros",
+ "itertools",
+ "libc",
+ "paste",
+ "serde",
+ "serde-value",
+]
+
+[[package]]
+name = "dytor_proc_macros"
+version = "0.1.0"
 dependencies = [
  "quote",
  "syn",
@@ -305,28 +327,6 @@ version = "0.1.0"
 dependencies = [
  "common",
  "replay",
-]
-
-[[package]]
-name = "rian"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ctor",
- "itertools",
- "libc",
- "paste",
- "rian_proc_macros",
- "serde",
- "serde-value",
-]
-
-[[package]]
-name = "rian_proc_macros"
-version = "0.1.0"
-dependencies = [
- "quote",
- "syn",
 ]
 
 [[package]]

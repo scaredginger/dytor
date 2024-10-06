@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread;
 use tokio::signal::unix::{signal, SignalKind};
 
-use common::rian::register_resource;
+use common::dytor::register_resource;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::LocalSet;

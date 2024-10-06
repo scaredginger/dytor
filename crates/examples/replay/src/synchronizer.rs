@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use common::anyhow::Result;
-use common::rian::{register_actor, Accessor, Actor, InitArgs, UniquelyNamed};
+use common::dytor::{register_actor, Accessor, Actor, InitArgs, UniquelyNamed};
 use tokio::sync::oneshot;
 pub use tokio_stream::StreamExt;
 

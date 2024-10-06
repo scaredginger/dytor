@@ -1,5 +1,5 @@
 [package]
-name = "rian"
+name = "dytor"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,4 +16,4 @@ serde-value.workspace = true
 
 libc.version = "*"
 
-rian_proc_macros.workspace = true
+dytor_proc_macros.workspace = true

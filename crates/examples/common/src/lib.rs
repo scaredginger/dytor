@@ -5,7 +5,7 @@ pub use itertools;
 pub use serde;
 pub use serde_value;
 
-pub use rian;
+pub use dytor;
 
 pub trait CommonTrait: 'static {
     fn print_self(&self);

@@ -1,8 +1,8 @@
-# Rian
+# Dytor
 
 **This codebase is intended only as a demonstration of some ideas, not for real-world use.**
 
-A prototypical Rust framework for low-latency event processing built with actors as the primitive.
+Dytor is prototypical Rust framework for low-latency event processing built with actors as the primitive.
 
 The intention is for an event processing system to be built on many actors, each of which can be swapped out for testing.
 

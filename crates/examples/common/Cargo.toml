@@ -13,4 +13,4 @@ itertools.workspace = true
 serde.workspace = true
 serde-value.workspace = true
 
-rian.workspace = true
+dytor.workspace = true
